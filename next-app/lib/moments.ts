@@ -308,9 +308,9 @@ export const memories: Memory[] = [
     id: "mem-interview-eve",
     sourceType: "voice_note",
     summary:
-      "Dad always called the night before big interviews to remind Alex to just be themselves and breathe.",
+      "The night before any big interview, Dad rang to say stop revising, breathe, be yourself — and ring him after with every detail.",
     transcript:
-      "Hey, it's Dad. Big day tomorrow. Just be yourself and breathe — you've got this.",
+      "It's Dad. Stop revising, it's gone ten. You already know your stuff — breathe, be yourself. Ring me after, I want every detail.",
     themes: ["encouragement", "interviews", "calm"],
     emotionalTone: "warm",
     approvedForUse: true,
@@ -319,9 +319,9 @@ export const memories: Memory[] = [
     id: "mem-first-day",
     sourceType: "voice_note",
     summary:
-      "Before Alex's first day at work, Dad said he was proud no matter how it went.",
+      "Before Alex's first day of work, Dad said he was already proud — and worst case, they'd get chips.",
     transcript:
-      "First day, huh? I'm proud of you already, whatever happens today.",
+      "First day, eh? Whatever happens in there, I'm already proud. Worst case, we get chips after.",
     themes: ["encouragement", "first_day", "pride"],
     emotionalTone: "proud",
     approvedForUse: true,
@@ -330,7 +330,7 @@ export const memories: Memory[] = [
     id: "mem-exam-line",
     sourceType: "voice_note",
     summary:
-      "Dad's classic line before exams: you've done the work, now go show them.",
+      "Dad's line before every exam, never once varied: you've done the work, now go show them.",
     transcript: "You've done the work. Now go show them what you've got.",
     themes: ["encouragement", "exams", "confidence"],
     emotionalTone: "reassuring",
@@ -370,9 +370,9 @@ export const moments: Moment[] = [
       },
     ],
     confidence: 0.92,
-    purpose: "Share an encouraging memory of Dad before the final interview.",
+    purpose: "A memory of Dad the night before the final interview.",
     openingMessage:
-      "Hi Alex. Big one tomorrow — the final interview. I found the voice note you saved from Dad, the one about breathing and being yourself. Would you like to hear it tonight?",
+      "Hey Alex. Tomorrow's the big one. You saved the voice note Dad left before your uni interview — stop revising, breathe, be yourself. Want to hear it tonight, or shall I leave you to prep?",
     audioSrc: "/audio/interview.mp3",
     memoryIds: ["mem-interview-eve", "mem-exam-line"],
     safetyReport: {
@@ -416,9 +416,9 @@ export const moments: Moment[] = [
       },
     ],
     confidence: 0.71,
-    purpose: "Offer a warm memory of Dad ahead of Mum's birthday — only if wanted.",
+    purpose: "A memory of Dad for Mum's birthday — only if Alex wants it.",
     openingMessage:
-      "Hi Alex. Friday is Mum's birthday — the first one without Dad. There's a memory you saved of him singing to her. Would it help to hear it, or shall I leave it be?",
+      "Hey Alex. Friday's Mum's birthday — the first one without him. You saved a recording of him singing to her, never quite in tune. Would it help to hear it, or shall I leave it be?",
     audioSrc: "/audio/birthday.mp3",
     memoryIds: ["mem-first-day"],
     safetyReport: {

@@ -23,10 +23,10 @@ function fallbackMessage(
   profile: UserProfile,
   assessment: EventAssessment,
 ): Message {
-  const { userName, lovedOneName, relationship } = profile;
+  const { userName, lovedOneName } = profile;
   return {
-    openingMessage: `Hi ${userName}. You have ${assessment.event.title.toLowerCase()} coming up. I found a memory you saved about your ${relationship}, ${lovedOneName}, that might help — would you like to hear it?`,
-    purpose: `Share an encouraging memory of ${lovedOneName} before ${assessment.event.title}.`,
+    openingMessage: `Hey ${userName}. ${assessment.event.title} is coming up, and there's a memory you saved of ${lovedOneName} that fits it. Want to hear it now, or shall I leave you to your day?`,
+    purpose: `Share a memory of ${lovedOneName} before ${assessment.event.title}.`,
   };
 }
 
@@ -55,9 +55,15 @@ async function llmMessage(
       {
         role: "system",
         content: [
-          "Write the opening for a gentle proactive phone call to someone grieving.",
-          "Rules: never imply the loved one is alive/present/communicating; frame as 'a memory you saved'.",
-          "No medical/legal/financial advice. End the opening with a question that makes declining easy.",
+          "You write the first thing said on a short, kind phone call to someone grieving.",
+          "Voice: a warm friend, not a service. Contractions, short sentences, plain words.",
+          "Structure: (1) the upcoming moment, plainly ('Tomorrow's the big interview'). (2) ONE specific detail from a saved memory — quote or reference the actual thing, don't summarise the person. (3) an easy out.",
+          "You are a companion with no inner life: never say 'I've been thinking' or claim feelings. Memories are things THEY saved — 'you saved a voice note where…', 'there's the one about…'.",
+          "Never imply the loved one is alive, present, watching, or communicating. It's 'a memory you saved' or 'something he used to say'.",
+          "Banned: 'reaching out', 'checking in', 'I hope this finds you', 'during this difficult time', 'I know how you feel', 'he would have wanted', anything that sounds like a greeting card or a call centre.",
+          "No medical, legal, or financial advice.",
+          "Two or three sentences at most. End with a question that makes saying no completely easy.",
+          "Example of the register (do not copy verbatim): 'Hey Alex. Tomorrow's the big interview — and you saved that voice note of your dad telling you to stop revising and just breathe. Want to hear it tonight, or shall I leave you to prep?'",
         ].join(" "),
       },
       {

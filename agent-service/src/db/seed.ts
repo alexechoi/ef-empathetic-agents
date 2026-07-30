@@ -64,9 +64,9 @@ function demoMemories(): Memory[] {
       ...base,
       id: "mem-interview-eve",
       summary:
-        "Dad always called the night before big interviews to remind Alex to just be themselves and breathe.",
+        "The night before any big interview, Dad rang to say stop revising, breathe, be yourself — and ring him after with every detail.",
       transcript:
-        "Hey, it's Dad. Big day tomorrow. Just be yourself and breathe — you've got this.",
+        "It's Dad. Stop revising, it's gone ten. You already know your stuff — breathe, be yourself. Ring me after, I want every detail.",
       themes: ["encouragement", "interviews", "calm"],
       relatedEvents: ["job_interview"],
       emotionalTone: "warm",
@@ -76,9 +76,9 @@ function demoMemories(): Memory[] {
       ...base,
       id: "mem-first-day",
       summary:
-        "Before Alex's first day at work, Dad said he was proud no matter how it went.",
+        "Before Alex's first day of work, Dad said he was already proud — and worst case, they'd get chips.",
       transcript:
-        "First day, huh? I'm proud of you already, whatever happens today.",
+        "First day, eh? Whatever happens in there, I'm already proud. Worst case, we get chips after.",
       themes: ["encouragement", "first_day", "pride"],
       relatedEvents: ["job_interview", "new_job"],
       emotionalTone: "proud",
@@ -88,7 +88,7 @@ function demoMemories(): Memory[] {
       ...base,
       id: "mem-exam-line",
       summary:
-        "Dad's classic line before exams: you've done the work, now go show them.",
+        "Dad's line before every exam, never once varied: you've done the work, now go show them.",
       transcript: "You've done the work. Now go show them what you've got.",
       themes: ["encouragement", "exams", "confidence"],
       relatedEvents: ["job_interview", "exam"],
@@ -100,7 +100,7 @@ function demoMemories(): Memory[] {
       id: "mem-next-step",
       sourceType: "written",
       summary:
-        "When Alex worried about mistakes, Dad encouraged focusing only on the next manageable step.",
+        "Whenever Alex spiralled about getting it wrong, Dad said the same thing: forget the staircase, just take the next step.",
       transcript:
         "You don't need the whole staircase. Just take the next step.",
       themes: ["encouragement", "anxiety", "resilience"],
@@ -113,7 +113,7 @@ function demoMemories(): Memory[] {
       id: "mem-sunday-roast",
       sourceType: "written",
       summary:
-        "Sunday lunch was roast chicken, crispy potatoes, carrots and Dad's repeatedly checked gravy.",
+        "Sunday lunch was Dad's roast chicken and crispy potatoes — he started the gravy an hour early and checked on it like it might escape.",
       themes: ["family", "food", "sunday_lunch", "tradition"],
       relatedEvents: ["family_tradition"],
       emotionalTone: "fond",
@@ -124,7 +124,7 @@ function demoMemories(): Memory[] {
       id: "mem-sunday-music",
       sourceType: "written",
       summary:
-        "Dad played Motown while cooking Sunday lunch and quietly sang the wrong lyrics.",
+        "He cooked Sunday lunch to Motown and sang the wrong words, quietly, like nobody could hear him.",
       themes: ["family", "music", "humour", "tradition"],
       relatedEvents: ["family_tradition"],
       emotionalTone: "playful",
@@ -135,7 +135,7 @@ function demoMemories(): Memory[] {
       id: "mem-tea",
       sourceType: "written",
       summary:
-        "Dad took tea with a splash of milk and two sugars; Alex joked it was dessert.",
+        "Tea with a splash of milk and two sugars, every time. Alex called it dessert; he never changed it.",
       themes: ["routine", "tea", "humour"],
       relatedEvents: ["family_tradition"],
       emotionalTone: "playful",
@@ -146,7 +146,7 @@ function demoMemories(): Memory[] {
       id: "mem-wimbledon",
       sourceType: "written",
       summary:
-        "Alex and Dad watched Wimbledon with strawberries in the first set and tea in the second.",
+        "Wimbledon on the sofa: strawberries in the first set, tea in the second, and Dad always backing whoever was losing.",
       themes: ["tennis", "family", "tradition"],
       relatedEvents: ["family_tradition"],
       emotionalTone: "nostalgic",
@@ -157,7 +157,7 @@ function demoMemories(): Memory[] {
       id: "mem-cornwall",
       sourceType: "written",
       summary:
-        "On a rainy Cornwall trip, Dad insisted on a beach walk and then bought everyone hot chips.",
+        "Cornwall, rain sideways — Dad still insisted on the beach walk, then bought everyone hot chips on the way back.",
       themes: ["travel", "family", "humour"],
       relatedEvents: ["family_tradition", "holiday"],
       emotionalTone: "fond",
@@ -168,7 +168,7 @@ function demoMemories(): Memory[] {
       id: "mem-tomato-pasta",
       sourceType: "written",
       summary:
-        "Dad's quick dinner was tomato pasta with garlic, basil and far too much parmesan.",
+        "His quick dinner: tomato pasta with garlic, basil, and far too much parmesan. 'That is the correct amount,' he said.",
       themes: ["food", "cooking", "routine"],
       relatedEvents: ["family_tradition"],
       emotionalTone: "warm",
@@ -179,7 +179,7 @@ function demoMemories(): Memory[] {
       id: "mem-birthday-voicemail",
       sourceType: "written",
       summary:
-        "Dad left birthday voice messages early in the morning before the birthday person woke up.",
+        "On your birthday he left a voicemail before you were even awake, so his voice was the first thing you heard.",
       themes: ["birthday", "family", "tradition"],
       relatedEvents: ["birthday"],
       emotionalTone: "warm",
