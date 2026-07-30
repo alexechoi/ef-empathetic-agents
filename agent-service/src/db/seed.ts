@@ -1,8 +1,8 @@
 import { logger } from "../lib/logger.js";
 import type { CalendarEvent, Memory, UserProfile } from "../schemas.js";
 import { getUser, upsertUser } from "./repositories/users.js";
-import { insertMemories } from "./repositories/memories.js";
-import { upsertEvents } from "./repositories/events.js";
+import { getMemory, insertMemories } from "./repositories/memories.js";
+import { getEvent, upsertEvents } from "./repositories/events.js";
 
 const log = logger.child({ module: "seed" });
 
@@ -95,6 +95,96 @@ function demoMemories(): Memory[] {
       emotionalTone: "reassuring",
       sensitivity: "low",
     },
+    {
+      ...base,
+      id: "mem-next-step",
+      sourceType: "written",
+      summary:
+        "When Alex worried about mistakes, Dad encouraged focusing only on the next manageable step.",
+      transcript:
+        "You don't need the whole staircase. Just take the next step.",
+      themes: ["encouragement", "anxiety", "resilience"],
+      relatedEvents: ["job_interview", "exam", "new_job"],
+      emotionalTone: "steady",
+      sensitivity: "low",
+    },
+    {
+      ...base,
+      id: "mem-sunday-roast",
+      sourceType: "written",
+      summary:
+        "Sunday lunch was roast chicken, crispy potatoes, carrots and Dad's repeatedly checked gravy.",
+      themes: ["family", "food", "sunday_lunch", "tradition"],
+      relatedEvents: ["family_tradition"],
+      emotionalTone: "fond",
+      sensitivity: "low",
+    },
+    {
+      ...base,
+      id: "mem-sunday-music",
+      sourceType: "written",
+      summary:
+        "Dad played Motown while cooking Sunday lunch and quietly sang the wrong lyrics.",
+      themes: ["family", "music", "humour", "tradition"],
+      relatedEvents: ["family_tradition"],
+      emotionalTone: "playful",
+      sensitivity: "low",
+    },
+    {
+      ...base,
+      id: "mem-tea",
+      sourceType: "written",
+      summary:
+        "Dad took tea with a splash of milk and two sugars; Alex joked it was dessert.",
+      themes: ["routine", "tea", "humour"],
+      relatedEvents: ["family_tradition"],
+      emotionalTone: "playful",
+      sensitivity: "low",
+    },
+    {
+      ...base,
+      id: "mem-wimbledon",
+      sourceType: "written",
+      summary:
+        "Alex and Dad watched Wimbledon with strawberries in the first set and tea in the second.",
+      themes: ["tennis", "family", "tradition"],
+      relatedEvents: ["family_tradition"],
+      emotionalTone: "nostalgic",
+      sensitivity: "low",
+    },
+    {
+      ...base,
+      id: "mem-cornwall",
+      sourceType: "written",
+      summary:
+        "On a rainy Cornwall trip, Dad insisted on a beach walk and then bought everyone hot chips.",
+      themes: ["travel", "family", "humour"],
+      relatedEvents: ["family_tradition", "holiday"],
+      emotionalTone: "fond",
+      sensitivity: "low",
+    },
+    {
+      ...base,
+      id: "mem-tomato-pasta",
+      sourceType: "written",
+      summary:
+        "Dad's quick dinner was tomato pasta with garlic, basil and far too much parmesan.",
+      themes: ["food", "cooking", "routine"],
+      relatedEvents: ["family_tradition"],
+      emotionalTone: "warm",
+      sensitivity: "low",
+    },
+    {
+      ...base,
+      id: "mem-birthday-voicemail",
+      sourceType: "written",
+      summary:
+        "Dad left birthday voice messages early in the morning before the birthday person woke up.",
+      themes: ["birthday", "family", "tradition"],
+      relatedEvents: ["birthday"],
+      emotionalTone: "warm",
+      sensitivity: "low",
+    },
   ];
 }
 
@@ -131,16 +221,25 @@ function demoEvents(): CalendarEvent[] {
 }
 
 /**
- * Seeds deterministic demo data (father, three voice-note memories, a calendar
- * with an upcoming interview) the first time the DB is empty. Idempotent.
+ * Seeds missing deterministic demo records without overwriting user edits to
+ * existing profiles, memory approvals, or calendar events. Idempotent.
  */
 export function seedIfEmpty(): void {
-  if (getUser(DEMO_USER_ID)) {
-    log.info({ userId: DEMO_USER_ID }, "Demo data already present; skipping seed");
-    return;
-  }
-  upsertUser(demoProfile());
-  insertMemories(demoMemories());
-  upsertEvents(demoEvents());
-  log.info({ userId: DEMO_USER_ID }, "Seeded demo data");
+  if (!getUser(DEMO_USER_ID)) upsertUser(demoProfile());
+
+  const missingMemories = demoMemories().filter(
+    (memory) => !getMemory(memory.id),
+  );
+  const missingEvents = demoEvents().filter((event) => !getEvent(event.id));
+  if (missingMemories.length > 0) insertMemories(missingMemories);
+  if (missingEvents.length > 0) upsertEvents(missingEvents);
+
+  log.info(
+    {
+      userId: DEMO_USER_ID,
+      memoriesAdded: missingMemories.length,
+      eventsAdded: missingEvents.length,
+    },
+    "Demo data ready",
+  );
 }
