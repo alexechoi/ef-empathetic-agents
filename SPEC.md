@@ -13,8 +13,19 @@ No new UI libraries. No hand-rolled equivalents of anything that exists in
 `ai-elements` (audio player, reasoning, confirmation, graph canvas).
 
 **Verified component notes** (from reading the installed source — respect these):
-- `confirmation.tsx`, `chain-of-thought.tsx`, `audio-player.tsx` are compound
-  components; all work client-side with local state. Use as designed.
+- `confirmation.tsx` is AI-SDK-shaped: `<Confirmation>` requires `state` (a tool
+  state string) and `approval` (`{ id }` or `{ id, approved }`), and renders
+  nothing unless `approval` is truthy. Drive it with hand-made values:
+  request = `state="approval-requested" approval={{ id: moment.id }}`;
+  after a click = `state="output-available" approval={{ id, approved: true|false }}`
+  (which switches to `ConfirmationAccepted`/`ConfirmationRejected`). Buttons are
+  `ConfirmationActions` + `ConfirmationAction onClick`.
+- `chain-of-thought.tsx` steps take `status?: "complete" | "active" | "pending"`
+  plus `icon` (Lucide) and `className` — there is no blocked/skip status. Map
+  planner semantics: done → `complete`, skipped → `pending`, blocked →
+  `complete` + `className="text-destructive"` + a `ShieldAlert`-style icon.
+- `audio-player.tsx` is a media-chrome compound; `AudioPlayerElement` takes the
+  `src`. Works client-side with a static file. Use as designed.
 - `persona.tsx` is a Rive/WebGL2 orb that fetches its asset from a **remote URL**
   and takes a voice state (`idle|listening|thinking|speaking|asleep`). It is the
   face of Dad's presence — use it as the primary visual, driven by playback
@@ -36,13 +47,15 @@ app/page.tsx                      # data in, layout out — ONLY place mock data
 app/memories/page.tsx             # graph screen (commit 3)
 components/moments/
   moment-feed.tsx                 # list container; owns useMomentActions
-  moment-card.tsx                 # shell: header, badge, reasoning; renders body via registry
+  moment-card.tsx                 # shell: header, badge, deliberation; renders body via registry
+  planner-trace.tsx               # run-level trace block at the top of the feed
   bodies/
     reach-out-body.tsx            # audio player + transcript
     ask-first-body.tsx            # confirmation → onApprove/onDecline callbacks
     stay-quiet-body.tsx           # (near-)empty on purpose
+    held-back-body.tsx            # failed safety checks, visible care
   decision-registry.ts            # Record<Decision, { badge, label, Body }>
-  use-moment-actions.ts           # all state transitions (approve/decline) live here
+  use-moment-actions.ts           # all state transitions + playingMomentId live here
 components/dad-panel/
   dad-panel.tsx                   # right-rail composition
   grounded-in.tsx                 # sources list for a moment
@@ -75,8 +88,28 @@ Endpoints the UI will consume (wiring is commit 4, not this spec's commits):
 - `GET /plans?userId=` → `OutreachPlan[]`
 - `GET /events?userId=`, `GET /memories?userId=`
 - `POST /calls { planId }` → triggers the ElevenLabs call
-- Seeded demo user: `demo-user` — **Alex** (user) + **Dad** (loved one).
-  Demo copy in the UI uses Alex, not Maya.
+- Seeded demo user: `demo-user` — **Alex** (user) + **Dad** (father).
+  Consent flags on the profile: `proactiveCallsConsent: true`,
+  `maxContactsPerWeek: 1`, `prohibitedTopics: ["medical diagnoses", "money problems"]`.
+- Seeded calendar (mirror these in mock data so mock ≈ API):
+  **Final job interview** (tomorrow), **Family Sunday lunch**, **Mum's birthday**.
+  Seeded memories: 3 Dad voice notes (interview-eve pep talk, first-day pride,
+  exam confidence), all `approvedForUse`, themes like `encouragement`.
+
+Facts that constrain the UI (verified in code, don't re-derive):
+- `generateProposal` emits a plan for **every** event — `toMoment(event, plan)`
+  is always a pair; no planless events.
+- `safetyValidator` resolves every `shouldContact` plan to `approved` or
+  `blocked`. **`pending` only survives on no-contact plans** — it is not an
+  "ask first" signal.
+- `trace` is **run-level**: one `TraceStep` per graph node, no `eventId`/`planId`.
+  It cannot be filtered per card.
+- `safetyReport.checks` are named checks (`opted_in`, `outside_quiet_hours`,
+  `within_frequency_limit`, `memories_approved`, `no_alive_claim`,
+  `no_medical_legal_financial_advice`, `no_dependency_encouragement`,
+  `no_emotional_certainty`, `offers_easy_decline`, …) with `passed` + `detail`.
+- `openingMessage` always ends with a question offering an easy decline —
+  transcript copy should read that way too.
 
 ## Data model (UI view-model over backend shapes)
 
@@ -87,47 +120,67 @@ API data flow through the same function:
 ```ts
 export type Decision = "reach_out" | "ask_first" | "stay_quiet" | "held_back";
 
-// Mapping (in the adapter, not in components):
+// Mapping (in the adapter, not in components). The backend has no ask/sent
+// distinction — consent is a UI state layered on top of approved plans:
 //   plan.shouldContact === false                    -> "stay_quiet"
-//   shouldContact && safetyStatus === "approved"    -> "reach_out"
-//   shouldContact && safetyStatus === "pending"     -> "ask_first"
-//   shouldContact && safetyStatus === "blocked"     -> "held_back"  (safety layer visible!)
+//   shouldContact && safetyStatus === "blocked"     -> "held_back"  (safety layer visible)
+//   shouldContact && safetyStatus === "approved"    -> "ask_first"  (awaiting Alex's go-ahead)
+//   "reach_out" = post-approval state — set by use-moment-actions after
+//   Approve, or pre-set in mock for the already-delivered interview card.
 
 export interface Moment {
-  id: string;                 // plan id (or event id for planless events)
+  id: string;                 // plan id
   title: string;              // event.title
   when: string;               // formatted event.startsAt
   decision: Decision;
   reasoningSummary: string;   // plan.reasoningSummary
-  trace: TraceStep[];         // filtered per-plan from the run trace
+  steps: MomentStep[];        // per-card deliberation, DERIVED (see below)
   confidence?: number;        // plan.confidence
   purpose?: string;           // plan.purpose
   openingMessage?: string;    // plan.openingMessage — the transcript
   audioSrc?: string;          // pre-generated clip for demo playback
   memoryIds: string[];        // plan.selectedMemoryIds
-  safetyReport?: SafetyReport; // surfaced as care/trust UI
+  safetyReport?: SafetyReport; // only present on shouldContact plans
 }
 
-// TraceStep, Memory, SafetyReport: copy the types from agent-service/src/schemas.ts
-// (step/label/status ok|skip|blocked|info; Memory has summary, themes,
-// sourceType, sensitivity, approvedForUse).
+// The run trace has NO per-plan linkage, so per-card steps are derived from
+// plan fields, mirroring the 4 graph nodes:
+//   1. importance  — from reasoningSummary (+ confidence)
+//   2. memories    — "N memories selected" from selectedMemoryIds
+//   3. proposal    — purpose / "no contact proposed"
+//   4. safety      — from safetyReport.status + failed check names
+// MomentStep = { label, detail?, tone: "ok" | "muted" | "blocked" }.
 
-export function toMoment(event: CalendarEvent, plan?: OutreachPlan, trace?: TraceStep[]): Moment
+// Memory, SafetyReport, TraceStep: copy types from agent-service/src/schemas.ts.
+
+export function toMoment(event: CalendarEvent, plan: OutreachPlan): Moment
 ```
 
-Mock: 3–4 moments — interview (`reach_out`), mum's birthday (`ask_first`),
-empty Tuesday (`stay_quiet`), optionally one `held_back` to demo the safety
-layer — plus ~5 Dad `Memory` items in backend shape. Synthetic only.
+Mock mirrors the seed calendar: **Final job interview** (`reach_out`,
+already-delivered card with audio), **Mum's birthday** (`ask_first`),
+**Family Sunday lunch** (`held_back` — frequency limit: 1 contact/week already
+used), plus a quiet weekday (`stay_quiet`). Memories in backend shape, matching
+the 3 seeded voice notes. Synthetic only.
 
 The `held_back` decision is one registry entry + one body file — proof the
-registry pattern holds. Its body renders the failed `SafetyCheck` rows: this is
-the "note on care" judging criterion made visible.
+registry pattern holds. Its body renders the failed `SafetyCheck` rows
+(e.g. `within_frequency_limit: 1/1 this week`): the "note on care" judging
+criterion made visible.
+
+The **run-level trace** still gets rendered — once, not per card: a collapsed
+"How the planner ran" block at the top of the feed (chain-of-thought compound,
+one step per TraceStep, `ok/info → complete`, `skip → pending`, `blocked →
+destructive-tinted complete`). Arrives with commit 2.
 
 ---
 
-## Commit 1 — `feat(ui): Moments shell, layout slots, static feed`
+## Commit 1 — `feat(ui): Moments shell, layout slots, static feed` ✅ DONE
 
-Strip the analytics dashboard; keep the sidebar shell; lay down the permanent layout.
+Shipped as `e20279d` (branch `worktree-noah+moments-ui`) and verified in the
+browser. Built as specified below, with one known drift: `lib/moments.ts` still
+uses the pre-merge shape (`reasoning: string[]`, `message{}`, 3 decisions).
+**Commit 2 starts by migrating it to the view-model above** (adds `held_back`,
+`steps`, seed-aligned events) — that migration is in-scope for commit 2.
 
 - `app/page.tsx` — drop `SectionCards`, `ChartAreaInteractive`, `DataTable`,
   `data.json`. Inside the existing `SidebarProvider`/`SidebarInset`/`SiteHeader`
@@ -158,33 +211,41 @@ rail at ≥xl doesn't shift the feed; build passes.
 
 ## Commit 2 — `feat(ui): decision bodies — reasoning, confirmation, voice playback`
 
-- `components/moments/moment-card.tsx` — add collapsible deliberation above the
-  body slot: `chain-of-thought.tsx` compound (`ChainOfThought` +
-  `ChainOfThoughtHeader` + `ChainOfThoughtStep` per `trace` entry — map
-  TraceStep `status` to step styling: `blocked` → destructive tint, `skip` →
-  muted). This mirrors the planner's real trace so commit-4 wiring is a data
-  swap, not a rework. Default collapsed; `defaultOpen` threaded for the demo.
+- `lib/moments.ts` — **migrate first**: view-model shape (`steps`, `held_back`,
+  backend-shaped `Memory`), `toMoment()` adapter, mock data mirroring the seed
+  calendar (interview / Mum's birthday / Sunday lunch / quiet day).
+- `components/moments/moment-card.tsx` — collapsible deliberation above the
+  body slot: `chain-of-thought.tsx` compound, one `ChainOfThoughtStep` per
+  derived `MomentStep` (tone `ok → complete`, `muted → pending`, `blocked →
+  complete + text-destructive + shield icon`). Default collapsed; `defaultOpen`
+  threaded for the demo.
+- `components/moments/planner-trace.tsx` — the run-level trace as a collapsed
+  "How the planner ran" block at the top of the feed (same chain-of-thought
+  compound; mock `TraceStep[]` until wiring).
 - `components/moments/bodies/reach-out-body.tsx` — `audio-player.tsx` compound
   (`AudioPlayer` + `AudioPlayerElement src` + `AudioPlayerControlBar` with
-  play/seek/time) + transcript as plain muted `<p>`.
-- `components/moments/bodies/ask-first-body.tsx` — `confirmation.tsx` compound:
-  `ConfirmationRequest` ("Dad would usually call before this — want a message?")
-  with `ConfirmationActions` wired to `onApprove`/`onDecline` **props** (no state
-  inside). Approve later maps to `POST /calls { planId }`.
+  play/seek/time) + `openingMessage` transcript as plain muted `<p>`.
+- `components/moments/bodies/ask-first-body.tsx` — `confirmation.tsx` per the
+  prop recipe in the component notes: request state until a button is clicked,
+  then flip to accepted/rejected via `onApprove`/`onDecline` **props** (no state
+  inside the body). Approve later maps to `POST /calls { planId }`.
 - `components/moments/bodies/stay-quiet-body.tsx` — nothing beyond collapsed
   reasoning. Silence is the UI.
 - `components/moments/bodies/held-back-body.tsx` — safety layer made visible:
-  failed `SafetyCheck` rows ("quiet hours", "sensitivity too high") in muted
+  the failed `SafetyCheck` rows by name with their `detail`
+  (e.g. `within_frequency_limit — Contacts this week: 1 / 1`) in muted
   destructive styling. No audio, no actions — the system chose care.
-- `components/moments/use-moment-actions.ts` — feed-level overrides map;
-  approve flips a moment to `reach_out` (revealing the player), decline to
-  `stay_quiet`. Cards stay dumb.
-- `decision-registry.ts` — register the three bodies.
+- `components/moments/use-moment-actions.ts` — feed-level overrides map +
+  `playingMomentId`; approve flips a moment to `reach_out` (revealing the
+  player), decline to `stay_quiet`. Cards stay dumb.
+- `decision-registry.ts` — register all four bodies.
 - `public/audio/interview.mp3` — pre-generated ElevenLabs clip checked in (never
   demo a live dependency; silent placeholder until the real render).
 
-**Accept:** interview card plays audio; birthday Approve reveals a player, Decline
-mutes the card; reasoning expands/collapses everywhere; Tuesday stays quiet.
+**Accept:** interview card plays audio; birthday Approve reveals a player,
+Decline mutes the card; Sunday-lunch card shows named safety checks; deliberation
+expands on every card; planner-trace block renders at the top; quiet day stays
+quiet; build passes.
 
 ---
 
@@ -204,9 +265,10 @@ mutes the card; reasoning expands/collapses everywhere; Tuesday stays quiet.
   grounded, not invented.
 - `app/memories/page.tsx` — `canvas.tsx` (React Flow wrapper): register
   `node.tsx`/`edge.tsx` via `nodeTypes`/`edgeTypes`; nodes = memories
-  (`NodeHeader`/`NodeTitle`/`NodeDescription` from kind/title), theme nodes
-  ("interviews", "encouragement", "birthdays") linked by edges. Static
-  `{ id, position, data }` arrays derived from `lib/moments.ts`.
+  (`NodeHeader`/`NodeTitle`/`NodeDescription` from `sourceType`/`summary`),
+  theme nodes from `themes` ("encouragement", "interviews", "confidence")
+  linked by edges. Static `{ id, position, data }` arrays derived from
+  `lib/moments.ts`.
 - `components/app-sidebar.tsx` — "Memories" already points at `/memories`.
 
 **Accept:** rail shows the Persona orb + Dad card + grounded-in list beside the
