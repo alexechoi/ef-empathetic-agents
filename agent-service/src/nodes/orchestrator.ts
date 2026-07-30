@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ChatOpenAI } from "@langchain/openai";
 import { logger } from "../lib/logger.js";
+import { DEFAULT_MODEL, OPENAI_BASE_URL } from "../lib/openai.js";
 import type { AgentStateType, AgentUpdate, Brief, Contact } from "../state.js";
 
 const log = logger.child({ node: "orchestrator" });
@@ -47,8 +48,9 @@ async function buildLlmBrief(
   context: string,
 ): Promise<Brief> {
   const model = new ChatOpenAI({
-    model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+    model: DEFAULT_MODEL,
     temperature: 0.3,
+    configuration: { baseURL: OPENAI_BASE_URL },
   }).withStructuredOutput(briefSchema, { name: "brief" });
 
   const brief = await model.invoke([

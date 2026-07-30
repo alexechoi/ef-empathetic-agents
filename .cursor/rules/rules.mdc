@@ -1,3 +1,19 @@
 ---
 alwaysApply: true
 ---
+
+# Project rules
+
+- **Architecture**: `next-app/` (UI + trigger API) talks to `agent-service/` — one
+  LangGraph service with two agents (orchestrator/decision + caller/voice), shared state.
+- **OpenAI = hackathon gateway**: never build a raw OpenAI client inline. Import the
+  shared singleton `getOpenAI()` / `DEFAULT_MODEL` from `agent-service/src/lib/openai.ts`.
+  It is pointed at `OPENAI_BASE_URL` (`https://4.231.223.10.nip.io`) with the team key.
+  For LangChain models, set `configuration.baseURL` to the same base URL.
+- **Config from env only**: `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL` live in
+  `agent-service/.env`. Default model `gpt-5.4-mini`; switch up only where it matters
+  ($50 team budget — avoid runaway loops on `gpt-5.5` / `gpt-5.6-sol`).
+- **Secrets**: never commit the team key or any secret. Use synthetic data only.
+- **Logging**: use the centralised logger (`agent-service/src/lib/logger.ts`); always
+  log errors — never swallow them.
+- **Dependencies**: add via `npm install`, never by hand-editing `package.json`.
