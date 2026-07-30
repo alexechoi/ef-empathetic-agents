@@ -43,8 +43,8 @@ No new UI libraries. No hand-rolled equivalents of anything that exists in
 ## UI architecture (modularity rules)
 
 ```
-app/page.tsx                      # data in, layout out — ONLY place mock data is imported
-app/memories/page.tsx             # graph screen (commit 3)
+app/page.tsx                      # data in, layout out — ONLY place data enters the tree
+app/graph/page.tsx                # memory graph screen (commit 3, judges' visual)
 components/moments/
   moment-feed.tsx                 # list container; owns useMomentActions
   moment-card.tsx                 # shell: header, badge, deliberation; renders body via registry
@@ -56,11 +56,23 @@ components/moments/
     held-back-body.tsx            # failed safety checks, visible care
   decision-registry.ts            # Record<Decision, { badge, label, Body }>
   use-moment-actions.ts           # all state transitions + playingMomentId live here
-components/dad-panel/
-  dad-panel.tsx                   # right-rail composition
-  grounded-in.tsx                 # sources list for a moment
-lib/moments.ts                    # types + mock data
+components/memories/
+  memories-column.tsx             # right column: dad card, ingest, list, recent calls
+  dad-card.tsx                    # persona orb + name + "Voice ready"
+  ingest-box.tsx                  # paste text + upload audio → new memory
+  memory-card.tsx                 # summary/themes/source + approve Switch
+  recent-calls.tsx                # compact CallRecord list at column bottom
+lib/moments.ts                    # types + toMoment adapter + mock data
+lib/api.ts                        # commit 4: typed client for agent-service
 ```
+
+**Main-screen layout (locked):** no right sidebar/rail. The content area is a
+two-column grid — `lg:grid-cols-[3fr_2fr]` — Moments left, Memories right,
+**each column its own scroll container**
+(`h-[calc(100svh-var(--header-height))] overflow-y-auto`, page body doesn't
+scroll), split by a single `border-l` on the right column. Below `lg` the
+columns stack and the page scrolls normally. The judges' story reads
+left-to-right: what he left behind (right) powers what shows up for you (left).
 
 Rules:
 1. **Presentational bodies.** Body components receive a `Moment` (and callbacks)
@@ -71,8 +83,9 @@ Rules:
 3. **Registry, not branches.** `moment-card.tsx` looks up
    `decision-registry.ts[moment.decision]` for badge variant, label, and Body.
    A new decision type = one new body file + one registry entry.
-4. **Layout is fixed from commit 1.** The page lays down `feed + rail` slots on
-   day one; later commits fill slots, never restructure.
+4. **Layout is locked as of commit 3.** Two-column grid (see below); commits
+   fill columns, never restructure. (Commit 1's rail slot was superseded by
+   the two-column decision — that one restructure is commit 3's job.)
 
 ---
 
@@ -83,11 +96,16 @@ The service is Express + SQLite + a LangGraph planner
 Zod schemas in `agent-service/src/schemas.ts` are the **single source of truth**
 — the UI copies those shapes, never invents parallel ones.
 
-Endpoints the UI will consume (wiring is commit 4, not this spec's commits):
+Endpoints the UI consumes (wired in commit 4; full docs in agent-service/README.md):
 - `POST /plans/generate { userId }` → `{ plans: OutreachPlan[], trace: TraceStep[] }`
 - `GET /plans?userId=` → `OutreachPlan[]`
-- `GET /events?userId=`, `GET /memories?userId=`
-- `POST /calls { planId }` → triggers the ElevenLabs call
+- `GET /events?userId=`, `GET /memories?userId=`, `GET /calls?userId=`
+- `POST /memories/ingest { userId, text, sourceType }` → LLM-extracted Memory
+- `POST /memories/upload` (multipart: audio file or transcript field)
+- `PATCH /memories/:id { approvedForUse }`
+- `POST /calls/trigger { planId, phoneNumber? }` → re-runs guardrails, dials
+  ElevenLabs "Memory Companion" agent (DRY_RUN simulates), returns
+  `{ status, safetyReport, call }`
 - Seeded demo user: `demo-user` — **Alex** (user) + **Dad** (father).
   Consent flags on the profile: `proactiveCallsConsent: true`,
   `maxContactsPerWeek: 1`, `prohibitedTopics: ["medical diagnoses", "money problems"]`.
@@ -249,48 +267,88 @@ quiet; build passes.
 
 ---
 
-## Commit 3 — `feat(ui): Dad rail + Memories graph page`
+## Commit 3 — `feat(ui): two-column layout, Memories column, graph page`
 
-- `components/dad-panel/dad-panel.tsx` — fills the commit-1 rail slot.
-  **Primary: the `persona.tsx` orb** at the top of a `Card`, with name +
-  "Voice ready" `Badge` below. Drive its state from playback: `"speaking"`
-  while any moment's audio plays, `"thinking"` while a confirmation is pending,
-  else `"idle"`. Playback state comes from `use-moment-actions.ts` (add
-  `playingMomentId`), so the orb reacts to the feed without prop drilling
-  through cards. Guard with `onLoadError` → swap to shadcn `Avatar` card so a
-  failed Rive fetch never shows a dead box.
-- `components/dad-panel/grounded-in.tsx` — `sources.tsx` compound
-  (`SourcesTrigger count` + `Source` items with **custom children, no real
-  hrefs**) listing the interview moment's memories: proves the message is
-  grounded, not invented.
-- `app/memories/page.tsx` — `canvas.tsx` (React Flow wrapper): register
-  `node.tsx`/`edge.tsx` via `nodeTypes`/`edgeTypes`; nodes = memories
-  (`NodeHeader`/`NodeTitle`/`NodeDescription` from `sourceType`/`summary`),
-  theme nodes from `themes` ("encouragement", "interviews", "confidence")
-  linked by edges. Static `{ id, position, data }` arrays derived from
-  `lib/moments.ts`.
-- `components/app-sidebar.tsx` — "Memories" already points at `/memories`.
+Restructure to the locked layout, still on mock data.
 
-**Accept:** rail shows the Persona orb + Dad card + grounded-in list beside the
-feed at ≥xl (no layout shift from commit 1); orb switches to `"speaking"` while
-audio plays and back to `"idle"` after; `/memories` renders ≥5 connected nodes;
-navigation works both ways; Avatar fallback renders if the Rive asset is
-unreachable.
+- `app/page.tsx` — replace the `flex` feed + empty `<aside>` with the
+  two-column grid above. Left column: `<MomentFeed/>` (unchanged). Right
+  column: `<MemoriesColumn/>`. Each column scrolls independently; page doesn't.
+- `components/memories/dad-card.tsx` — top of the right column. **Persona orb**
+  (`persona.tsx`) in a `Card`, name + "Voice ready" `Badge`. State from
+  `use-moment-actions` (`playingMomentId`): `"speaking"` while audio plays,
+  `"thinking"` while any ask-first is unresolved, else `"idle"`. Guard with
+  `onLoadError` → shadcn `Avatar` fallback (remote Rive asset, venue wifi).
+  This requires lifting the hook's return one level: `page.tsx` stays server —
+  add a client `components/moments-screen.tsx` that owns `useMomentActions`
+  and renders both columns (registry rules unchanged; feed/cards stay dumb).
+- `components/memories/ingest-box.tsx` — `Card` with a `Textarea` ("Paste a
+  chat or something they said…") + submit `Button`, and a file `Input`
+  (`accept="audio/*"`) for voice notes. UI-only in this commit: on submit,
+  append a fake extracted `Memory` to local state (flagged unapproved).
+- `components/memories/memory-card.tsx` — compact `Card` (size sm):
+  `sourceType` icon (lucide: Mic/MessageSquare/FileText), `summary`, theme
+  `Badge`s (outline), and an "Approved for use" `Switch` — consent made
+  tangible; unapproved cards render muted.
+- `components/memories/recent-calls.tsx` — bottom section, "Recent calls"
+  heading + compact rows (event title, status badge, time). Mock 1–2
+  `CallRecord`s.
+- `components/memories/memories-column.tsx` — composes the four above.
+- `app/graph/page.tsx` — the judges' visual, kept as its own page:
+  `canvas.tsx` (React Flow wrapper): register `node.tsx`/`edge.tsx` via
+  `nodeTypes`/`edgeTypes`; memory nodes (`NodeTitle`/`NodeDescription` from
+  `sourceType`/`summary`) + theme nodes from `themes` ("encouragement",
+  "interviews", "confidence") linked by edges. Static `{ id, position, data }`
+  derived from `lib/moments.ts`.
+- `components/app-sidebar.tsx` — nav: Moments (`/`), **Memory graph**
+  (`/graph`), Settings (`#`).
+
+**Accept:** two columns at ≥lg, each scrolls independently with a clean border
+split, stacked below lg; orb reacts to playback and falls back to Avatar if
+Rive fails; ingest box appends a muted unapproved memory card; approve switch
+un-mutes it; recent calls render; `/graph` shows ≥5 connected nodes; build passes.
 
 ---
 
-## Commit 4 (future) — wiring, for orientation only
+## Commit 4 — `feat(ui): wire to agent-service`
 
-Not part of this spec's build, but the shape is now known:
-- `page.tsx` fetches `GET /events` + `GET /plans?userId=demo-user`, maps through
-  `toMoment()`.
-- "Generate" action calls `POST /plans/generate` and re-renders the feed with
-  the returned `trace`.
-- `use-moment-actions.ts` approve → `POST /calls { planId }`; playback state
-  unchanged.
-- Everything else (bodies, registry, cards, panels) is untouched — that is the
-  point of the architecture rules above.
+The full live loop: add memory → approve → generate plans → approve a moment →
+the phone rings. Everything below touches ONLY `lib/api.ts`, `lib/moments.ts`
+(adapter), `use-moment-actions.ts`, `moments-screen.tsx`, and the ingest box —
+bodies/cards/registry are untouched by design.
+
+- **CORS-free wiring:** add a rewrite in `next.config.ts`:
+  `/api/agent/:path*` → `http://localhost:2024/:path*` (env-overridable via
+  `AGENT_SERVICE_URL`). Browser talks same-origin; no backend changes.
+- `lib/api.ts` — thin typed client over the rewrite: `getMemories`, `getEvents`,
+  `getPlans`, `generatePlans`, `triggerCall`, `ingestText`, `uploadAudio`
+  (multipart), `approveMemory` (PATCH), `getCalls`. All return schemas.ts
+  shapes. Every call wrapped so failures fall back to mock data — the demo
+  never white-screens if the service is down.
+- `lib/moments.ts` — implement `toMoment(event, plan)` for real (decision
+  mapping from the table above; derive `steps` from plan fields; attach
+  pre-generated `audioSrc` by eventId for the demo cards).
+- `moments-screen.tsx` — loads live data on mount (`getEvents` + `getPlans` +
+  `getMemories` + `getCalls`), seeds `useMomentActions` with it; falls back to
+  mock. **Generate plans** `Button` in the left column header: calls
+  `generatePlans`, replaces feed + planner trace with the real run.
+- `use-moment-actions.ts` — approve on ask-first → `triggerCall(planId)`
+  immediately (the confirmation card IS the consent step — best demo beat:
+  click → phone rings). Card shows a transient "Calling…" state
+  (`Badge` + spinner) until the 201 lands, then flips to `reach_out` with the
+  call status; on error, revert + `sonner` toast. `DRY_RUN=true` in dev.
+- `ingest-box.tsx` — submit → `ingestText` / `uploadAudio`, then refresh
+  memories list (extraction runs server-side); approve switch → `approveMemory`.
+- `recent-calls.tsx` — render live `getCalls` rows (status: initiated /
+  completed / failed / skipped).
+
+**Accept:** with agent-service running (DRY_RUN): Generate renders real plans +
+real trace; pasting text yields an extracted memory card; toggling approve
+persists (survives reload); approving the ask-first moment creates a call
+record that appears under Recent calls; with the service stopped, the app
+still renders the mock feed with no errors.
 
 ## Out of scope
 
-Live ElevenLabs calls from the UI, calendar ingestion, upload flow, auth.
+Auth, calendar ingestion from real providers, editing quiet-hours/consent from
+the UI (API exists — stretch goal), call transcript viewer.
