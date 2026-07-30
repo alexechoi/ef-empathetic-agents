@@ -334,15 +334,20 @@ export function useMomentActions({
           );
         } catch {
           if (!resultHandled) {
-            if (!streamStarted) {
-              try {
-                const result = await api.triggerCall(momentId);
-                handleResult(result);
-              } catch {
+            // Never blind-retry: the backend may have dialed even though the
+            // stream died before we saw "started" (observed double-dial via
+            // the dev proxy). Ask the server what actually happened instead.
+            void streamStarted;
+            try {
+              const calls = await api.getCalls();
+              const placed = calls.find((c) => c.planId === momentId);
+              if (placed) {
+                handleResult({ status: placed.status, call: placed });
+              } else {
                 revertAndToast("Couldn't place the call — please try again.");
               }
-            } else {
-              revertAndToast("Couldn't place the call — please try again.");
+            } catch {
+              revertAndToast("Couldn't confirm the call — check Recent calls.");
             }
           }
         } finally {
