@@ -6,6 +6,13 @@ import type {
   UserProfile,
 } from "../schemas.js";
 import { isWithinQuietHours } from "../lib/time.js";
+import { logger } from "../lib/logger.js";
+
+const log = logger.child({ module: "safety" });
+const DEMO_BYPASSABLE_CHECKS = new Set([
+  "outside_quiet_hours",
+  "within_frequency_limit",
+]);
 
 export interface SafetyInput {
   profile: UserProfile;
@@ -168,6 +175,24 @@ export function validateOutreach(input: SafetyInput): SafetyReport {
     offersDecline,
     offersDecline ? undefined : "Opening does not offer an easy way to decline",
   );
+
+  const bypassCallLimits =
+    process.env.DEMO_BYPASS_CALL_LIMITS === "true" ||
+    (process.env.DEMO_BYPASS_CALL_LIMITS !== "false" &&
+      process.env.NODE_ENV !== "production");
+  const overriddenChecks = checks.filter(
+    (check) => !check.passed && DEMO_BYPASSABLE_CHECKS.has(check.name),
+  );
+  if (bypassCallLimits && overriddenChecks.length > 0) {
+    for (const check of overriddenChecks) {
+      check.passed = true;
+      check.detail = `Demo bypass: ${check.detail ?? "operational limit ignored"}`;
+    }
+    log.warn(
+      { checks: overriddenChecks.map((check) => check.name) },
+      "Bypassed operational call limits for demo",
+    );
+  }
 
   const status = checks.every((c) => c.passed) ? "approved" : "blocked";
   return { status, checks };

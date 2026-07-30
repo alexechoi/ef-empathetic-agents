@@ -56,6 +56,19 @@ export function buildDynamicVariables(
       return `${i + 1}. ${m.summary}${said}`;
     })
     .join("\n");
+  const knowledgeMemories = ctx.knowledgeMemories
+    .map((memory, index) => {
+      const details = [
+        `people: ${memory.people.join(", ") || "none"}`,
+        `themes: ${memory.themes.join(", ") || "none"}`,
+        `related events: ${memory.relatedEvents.join(", ") || "none"}`,
+      ].join("; ");
+      const transcript = memory.transcript
+        ? ` Saved wording: "${memory.transcript}"`
+        : "";
+      return `${index + 1}. ${memory.summary} (${details}).${transcript}`;
+    })
+    .join("\n");
 
   return {
     user_name: ctx.userName,
@@ -66,6 +79,8 @@ export function buildDynamicVariables(
     purpose: ctx.purpose,
     opening_message: ctx.approvedOpeningMessage,
     memories: memories || "(no specific memory available)",
+    knowledge_memories:
+      knowledgeMemories || "(no additional approved memories available)",
     prohibited_topics: ctx.prohibitedTopics.join(", ") || "none",
   };
 }

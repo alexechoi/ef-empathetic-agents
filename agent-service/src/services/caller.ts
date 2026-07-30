@@ -6,7 +6,10 @@ import {
   recordContact,
 } from "../db/repositories/calls.js";
 import { getEvent } from "../db/repositories/events.js";
-import { getMemoriesByIds } from "../db/repositories/memories.js";
+import {
+  getMemoriesByIds,
+  listMemories,
+} from "../db/repositories/memories.js";
 import { getPlan } from "../db/repositories/plans.js";
 import { getUser } from "../db/repositories/users.js";
 import { placeOutboundCall } from "../lib/elevenlabs.js";
@@ -34,6 +37,7 @@ export interface CallObserver {
     eventId: string;
     purpose: string;
     selectedMemoryIds: string[];
+    knowledgeMemoryCount: number;
     reasoningSummary: string;
   }): void;
 }
@@ -87,6 +91,9 @@ export async function executeCall(
     throw new CallExecutionError("Plan's user or event no longer exists", 404);
   }
   const memories = getMemoriesByIds(plan.selectedMemoryIds);
+  const knowledgeMemories = listMemories(profile.id).filter(
+    (memory) => memory.approvedForUse,
+  );
   const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
   const report = validateOutreach({
     profile,
@@ -130,19 +137,26 @@ export async function executeCall(
     return { httpStatus: 200, status: "skipped", safetyReport: report, call };
   }
 
-  const context = buildCallContext({ profile, event, plan, memories });
+  const context = buildCallContext({
+    profile,
+    event,
+    plan,
+    memories,
+    knowledgeMemories,
+  });
   observer.context({
     eventId: event.id,
     purpose: context.purpose,
     selectedMemoryIds: memories.map((memory) => memory.id),
+    knowledgeMemoryCount: knowledgeMemories.length,
     reasoningSummary: plan.reasoningSummary,
   });
   observer.trace(
     callTrace(
       "build_context",
-      "Built restricted call context",
+      "Built approved call context",
       "ok",
-      `${memories.length} approved memory(ies) included`,
+      `${memories.length} selected and ${knowledgeMemories.length} searchable approved memory(ies) included`,
     ),
   );
 
