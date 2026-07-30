@@ -334,9 +334,14 @@ the phone rings. Everything below touches ONLY `lib/api.ts`, `lib/moments.ts`
 (adapter), `use-moment-actions.ts`, `moments-screen.tsx`, and the ingest box —
 bodies/cards/registry are untouched by design.
 
-- **CORS-free wiring:** add a rewrite in `next.config.ts`:
+- **Wiring:** add a rewrite in `next.config.ts`:
   `/api/agent/:path*` → `http://localhost:2024/:path*` (env-overridable via
-  `AGENT_SERVICE_URL`). Browser talks same-origin; no backend changes.
+  `AGENT_SERVICE_URL`). The backend now has CORS (`WEB_APP_ORIGIN`, default
+  `localhost:3000`), so direct fetch also works — but keep the rewrite: it's
+  immune to the dev-server port drifting (we were on :3001 tonight) and needs
+  no client env. SSE consumption: POST-based streams are read with `fetch()` +
+  ReadableStream, NOT `EventSource` — copy the `streamPost` helper from
+  agent-service/README.md ("Frontend streaming") instead of reinventing it.
 - `lib/api.ts` — thin typed client over the rewrite: `getMemories`, `getEvents`,
   `getPlans`, `generatePlans`, `triggerCall`, `ingestText`, `uploadAudio`
   (multipart), `approveMemory` (PATCH), `getCalls`. All return schemas.ts
@@ -352,25 +357,40 @@ bodies/cards/registry are untouched by design.
   library): `trace` events append to the planner-trace block **live**,
   `event_decision` events update each card's deliberation as they arrive,
   `plans` event swaps the feed. Fall back to the non-stream POST on error.
-- `use-moment-actions.ts` — approve on ask-first → `triggerCall(planId)`
-  immediately (the confirmation card IS the consent step — best demo beat:
-  click → phone rings). Card shows a transient "Calling…" state
-  (`Badge` + spinner) until the 201 lands, then flips to `reach_out` with the
-  call status; on error, revert + `sonner` toast. `DRY_RUN=true` in dev.
-  Stretch: `GET /calls/:conversationId/stream` to tick the call status live
-  (initiated → in-progress → completed) in Recent calls.
+- `use-moment-actions.ts` — approve on ask-first → **`POST
+  /calls/trigger/stream`** immediately (the confirmation card IS the consent
+  step — best demo beat: click → phone rings). The stream's `trace` events
+  (plan load → guardrail re-check → restricted context → ElevenLabs initiation)
+  render live in the card's deliberation while a "Calling…" `Badge` + spinner
+  shows — the audience literally watches the safety re-check before the dial.
+  On the `result` event, branch on `status`:
+  - `initiated` → flip to `reach_out`, add row to Recent calls
+  - **`skipped` (guardrails failed at call time)** → flip to `held_back` with
+    the fresh `safetyReport` — this is a success state for the care story, not
+    an error
+  - `failed` / stream `error` → revert + `sonner` toast
+  Fallback to non-stream `POST /calls/trigger` if the stream errors before
+  `started`. `DRY_RUN=true` in dev.
+  Stretch: after `initiated` on a real (non-dry-run) call, open
+  `GET /calls/:conversationId/stream` and render sanitized live events
+  (`user_transcript`, `agent_response`, `reasoning_summary`, `call_ended`)
+  under the card — note it 409s for dry-run conversations, so gate on that.
 - `app/graph/page.tsx` — swap mock for `GET /memories/graph` (same shape by
   construction; fallback to mock).
 - `ingest-box.tsx` — submit → `ingestText` / `uploadAudio`, then refresh
   memories list (extraction runs server-side); approve switch → `approveMemory`.
 - `recent-calls.tsx` — render live `getCalls` rows (status: initiated /
-  completed / failed / skipped).
+  completed / failed / skipped). Completed calls may carry
+  `reasoningSummaries` / `transcript` (post-call webhook) — show transcript
+  behind a collapsed disclosure if present; don't build a viewer.
 
-**Accept:** with agent-service running (DRY_RUN): Generate renders real plans +
-real trace; pasting text yields an extracted memory card; toggling approve
-persists (survives reload); approving the ask-first moment creates a call
-record that appears under Recent calls; with the service stopped, the app
-still renders the mock feed with no errors.
+**Accept:** with agent-service running (DRY_RUN): Generate streams trace steps
+into the planner-trace block live and renders real plans; pasting text yields
+an extracted memory card; toggling approve persists (survives reload);
+approving the ask-first moment streams the guardrail re-check into the card
+and ends as `reach_out` + a Recent-calls row (or `held_back` if the re-check
+returns `skipped`); with the service stopped, the app still renders the mock
+feed with no errors.
 
 ## Out of scope
 
