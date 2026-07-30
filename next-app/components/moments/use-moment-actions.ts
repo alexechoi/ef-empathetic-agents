@@ -157,8 +157,38 @@ export function useMomentActions({
       );
     };
 
+    const parseText = (evt: MessageEvent): string => {
+      try {
+        const parsed = JSON.parse(evt.data);
+        return typeof parsed === "string"
+          ? parsed
+          : (parsed?.text ?? parsed?.message ?? JSON.stringify(parsed));
+      } catch {
+        return evt.data;
+      }
+    };
+
+    // Agent speech arrives as growing partials, then a final agent_response.
+    // Both replace the trailing agent turn so the sentence grows live without
+    // stacking duplicates.
+    const mergeAgentTurn = (evt: Event) => {
+      const text = parseText(evt as MessageEvent);
+      setLiveCall((prev) => {
+        if (!prev || prev.conversationId !== conversationId) return prev;
+        const turns = [...prev.turns];
+        const last = turns[turns.length - 1];
+        if (last?.role === "agent") {
+          turns[turns.length - 1] = { role: "agent", text };
+        } else {
+          turns.push({ role: "agent", text });
+        }
+        return { ...prev, turns };
+      });
+    };
+
     monitor.addEventListener("user_transcript", appendTurn("user"));
-    monitor.addEventListener("agent_response", appendTurn("agent"));
+    monitor.addEventListener("agent_response", mergeAgentTurn);
+    monitor.addEventListener("agent_response_part", mergeAgentTurn);
     // enable_reasoning_summary is false in the default agent config, so this
     // rarely fires — kept anyway since it's harmless if it ever does.
     monitor.addEventListener("reasoning_summary", appendTurn("agent"));
@@ -179,7 +209,15 @@ export function useMomentActions({
 
     monitor.addEventListener("call_ended", endMonitor);
     monitor.addEventListener("complete", endMonitor);
-    monitor.addEventListener("error", endMonitor);
+    // Named "error" events from the server AND native connection errors both
+    // land here; only server-sent ones carry data. For native errors, end only
+    // once the connection is permanently closed (EventSource auto-reconnects).
+    monitor.addEventListener("error", (evt) => {
+      const isServerError = (evt as MessageEvent).data !== undefined;
+      if (isServerError || monitor.readyState === EventSource.CLOSED) {
+        endMonitor();
+      }
+    });
   }, []);
 
   // --- Generate plans: streamed trace + live per-card decisions ---

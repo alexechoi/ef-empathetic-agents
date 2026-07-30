@@ -27,7 +27,9 @@ export function LiveCall({ liveCall }: { liveCall: LiveCallState }) {
         )}
       </div>
       {liveCall.turns.length === 0 ? (
-        <p className="text-xs text-muted-foreground">Connecting…</p>
+        <p className="text-xs text-muted-foreground">
+          {liveCall.status === "live" ? "Connecting…" : "Call ended."}
+        </p>
       ) : (
         <div className="flex flex-col gap-1.5">
           {liveCall.turns.map((turn, i) => (
