@@ -1,27 +1,62 @@
-import { randomUUID } from "node:crypto";
 import { Router } from "express";
-import { CallRecordSchema, TriggerCallRequestSchema } from "../schemas.js";
+import { TriggerCallRequestSchema } from "../schemas.js";
 import { asyncHandler, parseOrThrow } from "../lib/http.js";
-import { getPlan } from "../db/repositories/plans.js";
-import { getUser } from "../db/repositories/users.js";
-import { getEvent } from "../db/repositories/events.js";
-import { getMemoriesByIds } from "../db/repositories/memories.js";
 import {
-  countContactsSince,
   getCallByConversationId,
-  insertCall,
   listCalls,
-  recordContact,
   updateCall,
 } from "../db/repositories/calls.js";
-import { validateOutreach } from "../safety/validate.js";
-import { buildCallContext } from "../calls/context.js";
-import { placeOutboundCall } from "../lib/elevenlabs.js";
 import { logger } from "../lib/logger.js";
+import { endSse, sendSse, startSse } from "../lib/sse.js";
+import {
+  CallExecutionError,
+  executeCall,
+  type CallObserver,
+} from "../services/caller.js";
+import { monitorConversation } from "../lib/elevenlabs-monitor.js";
 
 const log = logger.child({ route: "calls" });
 
 export const callsRouter = Router();
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function transcriptTurns(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function formatTranscript(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  const lines = transcriptTurns(value)
+    .map((turn) => {
+      const role = typeof turn.role === "string" ? turn.role : "?";
+      const message =
+        typeof turn.message === "string"
+          ? turn.message
+          : typeof turn.text === "string"
+            ? turn.text
+            : "";
+      return message ? `${role}: ${message}` : "";
+    })
+    .filter(Boolean);
+  return lines.length > 0 ? lines.join("\n") : undefined;
+}
+
+function extractReasoningSummaries(value: unknown): string[] {
+  return transcriptTurns(value).flatMap((turn) => {
+    if (typeof turn.reasoning === "string") return [turn.reasoning];
+    if (!isRecord(turn.reasoning)) return [];
+    const summary =
+      typeof turn.reasoning.summary === "string"
+        ? turn.reasoning.summary
+        : typeof turn.reasoning.reasoning_summary === "string"
+          ? turn.reasoning.reasoning_summary
+          : undefined;
+    return summary ? [summary] : [];
+  });
+}
 
 /**
  * Triggers an approved outreach plan: re-runs the safety guardrails against the
@@ -31,90 +66,111 @@ export const callsRouter = Router();
 callsRouter.post(
   "/trigger",
   asyncHandler(async (req, res) => {
-    const { planId, phoneNumber } = parseOrThrow(
-      TriggerCallRequestSchema,
-      req.body,
-    );
-
-    const plan = getPlan(planId);
-    if (!plan) {
-      res.status(404).json({ error: "Plan not found" });
-      return;
-    }
-    if (!plan.shouldContact) {
-      res.status(409).json({ error: "Plan does not propose contact" });
-      return;
-    }
-
-    const profile = getUser(plan.userId);
-    const event = getEvent(plan.eventId);
-    if (!profile || !event) {
-      res.status(404).json({ error: "Plan's user or event no longer exists" });
-      return;
-    }
-
-    const memories = getMemoriesByIds(plan.selectedMemoryIds);
-    const proposedTime = plan.proposedTime ?? new Date().toISOString();
-    const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
-
-    // Guardrail re-check immediately before dialling.
-    const report = validateOutreach({
-      profile,
-      event,
-      memories,
-      openingMessage: plan.openingMessage ?? "",
-      purpose: plan.purpose ?? "",
-      proposedTime,
-      contactsThisWeek: countContactsSince(profile.id, sevenDaysAgo),
-    });
-
-    const now = new Date().toISOString();
-
-    if (report.status !== "approved") {
-      const call = insertCall(
-        CallRecordSchema.parse({
-          id: randomUUID(),
-          userId: profile.id,
-          planId: plan.id,
-          status: "skipped",
-          detail: "Blocked by safety guardrails at trigger time",
-          createdAt: now,
-        }),
+    const request = parseOrThrow(TriggerCallRequestSchema, req.body);
+    try {
+      const result = await executeCall(request);
+      log.info(
+        { planId: request.planId, status: result.status },
+        "Call triggered",
       );
-      log.warn({ planId: plan.id }, "Call skipped by guardrails");
-      res.status(200).json({ status: "skipped", safetyReport: report, call });
-      return;
-    }
-
-    const ctx = buildCallContext({ profile, event, plan, memories });
-    const toNumber = phoneNumber ?? profile.phoneNumber;
-    const result = await placeOutboundCall(
-      toNumber,
-      ctx,
-      profile.voiceCloningConsent,
-    );
-
-    const call = insertCall(
-      CallRecordSchema.parse({
-        id: randomUUID(),
-        userId: profile.id,
-        planId: plan.id,
+      res.status(result.httpStatus).json({
         status: result.status,
-        conversationId: result.conversationId,
-        callSid: result.callSid,
-        detail: result.detail,
-        createdAt: now,
-      }),
-    );
-
-    if (result.status === "initiated") {
-      recordContact(profile.id, plan.id, "phone_call");
+        safetyReport: result.safetyReport,
+        call: result.call,
+      });
+    } catch (error) {
+      if (error instanceof CallExecutionError) {
+        res.status(error.httpStatus).json({ error: error.message });
+        return;
+      }
+      throw error;
     }
-
-    log.info({ planId: plan.id, status: result.status }, "Call triggered");
-    res.status(201).json({ status: result.status, safetyReport: report, call });
   }),
 );
+
+/** Streams caller preflight, guardrails, initiation and persistence. */
+callsRouter.post("/trigger/stream", async (req, res) => {
+  let request;
+  try {
+    request = parseOrThrow(TriggerCallRequestSchema, req.body);
+  } catch (error) {
+    log.error({ err: error }, "Invalid call stream request");
+    res.status(400).json({ error: "Validation failed" });
+    return;
+  }
+
+  startSse(res);
+  const observer: CallObserver = {
+    trace: (step) => sendSse(res, "trace", step),
+    context: (context) => sendSse(res, "call_context", context),
+  };
+  sendSse(res, "started", {
+    planId: request.planId,
+    at: new Date().toISOString(),
+  });
+
+  try {
+    const result = await executeCall(request, observer);
+    sendSse(res, "result", {
+      status: result.status,
+      safetyReport: result.safetyReport,
+      call: result.call,
+    });
+    sendSse(res, "complete", {
+      status: result.status,
+      conversationId: result.call.conversationId,
+    });
+  } catch (error) {
+    const message =
+      error instanceof CallExecutionError
+        ? error.message
+        : "Caller stream failed";
+    log.error({ err: error, planId: request.planId }, "Caller stream failed");
+    sendSse(res, "error", { message });
+  } finally {
+    endSse(res);
+  }
+});
+
+/**
+ * Proxies ElevenLabs' active-call monitor as sanitized SSE. The conversation
+ * must belong to a call in our database; the ElevenLabs API key stays private.
+ */
+callsRouter.get("/:conversationId/stream", async (req, res) => {
+  const conversationId = String(req.params.conversationId);
+  const call = getCallByConversationId(conversationId);
+  if (!call) {
+    res.status(404).json({ error: "Conversation not found" });
+    return;
+  }
+  if (conversationId.startsWith("dry-run-")) {
+    res.status(409).json({ error: "Dry-run calls cannot be monitored" });
+    return;
+  }
+
+  startSse(res);
+  const abort = new AbortController();
+  res.on("close", () => abort.abort());
+  sendSse(res, "monitor_connected", { conversationId });
+
+  try {
+    await monitorConversation(
+      conversationId,
+      ({ event, data }) => sendSse(res, event, data),
+      abort.signal,
+    );
+    if (!abort.signal.aborted) {
+      sendSse(res, "complete", { conversationId });
+    }
+  } catch (error) {
+    if (!abort.signal.aborted) {
+      log.error({ err: error, conversationId }, "Live call monitor failed");
+      sendSse(res, "error", { message: "Live call monitor failed" });
+    }
+  } finally {
+    endSse(res);
+  }
+});
 
 /** ElevenLabs post-call webhook: persist status and transcript when we can. */
 callsRouter.post(
@@ -126,18 +182,18 @@ callsRouter.post(
       return;
     }
 
-    const body = (req.body ?? {}) as Record<string, any>;
-    const data = (body.data ?? body) as Record<string, any>;
-    const conversationId: string | undefined =
-      data.conversation_id ?? data.conversationId;
-    const transcriptText =
-      typeof data.transcript === "string"
-        ? data.transcript
-        : Array.isArray(data.transcript)
-          ? data.transcript
-              .map((t: any) => `${t.role ?? "?"}: ${t.message ?? t.text ?? ""}`)
-              .join("\n")
+    const body = isRecord(req.body) ? req.body : {};
+    const data = isRecord(body.data) ? body.data : body;
+    const conversationId =
+      typeof data.conversation_id === "string"
+        ? data.conversation_id
+        : typeof data.conversationId === "string"
+          ? data.conversationId
           : undefined;
+    const transcript = data.transcript;
+    const transcriptText = formatTranscript(transcript);
+    const reasoningSummaries = extractReasoningSummaries(transcript);
+    const analysis = isRecord(data.analysis) ? data.analysis : undefined;
 
     if (conversationId) {
       const existing = getCallByConversationId(conversationId);
@@ -145,6 +201,8 @@ callsRouter.post(
         updateCall(existing.id, {
           status: "completed",
           transcript: transcriptText,
+          reasoningSummaries,
+          analysis,
         });
         log.info({ conversationId }, "Call webhook applied");
       } else {
