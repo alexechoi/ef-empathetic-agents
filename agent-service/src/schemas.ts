@@ -130,6 +130,7 @@ export type OutreachPlan = z.infer<typeof OutreachPlanSchema>;
 export const CallContextSchema = z.object({
   userName: z.string(),
   lovedOneName: z.string(),
+  relationship: z.string().default("loved one"),
   event: CalendarEventSchema,
   purpose: z.string(),
   memories: z.array(MemorySchema),
