@@ -22,7 +22,7 @@ import {
 
 const nav = [
   { title: "Moments", url: "/", icon: <CalendarIcon /> },
-  { title: "Memories", url: "/memories", icon: <GraphIcon /> },
+  { title: "Memory graph", url: "/graph", icon: <GraphIcon /> },
   { title: "Settings", url: "#", icon: <GearIcon /> },
 ]
 

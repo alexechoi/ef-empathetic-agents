@@ -283,3 +283,89 @@ export const plannerTrace: TraceStep[] = [
     detail: "2 approved, 1 blocked",
   },
 ];
+
+// --- Calls (mirror agent-service CallRecordSchema) ---------------------------
+
+export type CallStatus = "initiated" | "skipped" | "failed" | "completed";
+
+export interface CallRecord {
+  id: string;
+  planId: string;
+  status: CallStatus;
+  conversationId?: string;
+  transcript?: string;
+  detail?: string;
+  createdAt: string;
+}
+
+export const recentCalls: CallRecord[] = [
+  {
+    id: "call-1",
+    planId: "plan-earlier",
+    status: "completed",
+    conversationId: "conv-demo-1",
+    detail: "Encouragement before Monday's presentation",
+    transcript:
+      "Agent: Hi Alex — I have a memory of Dad you saved for days like this. Would you like to hear it?\nAlex: Yes, please.",
+    createdAt: "2026-07-28T18:05:00.000Z",
+  },
+];
+
+// --- Knowledge graph (mirror agent-service KnowledgeGraphSchema) -------------
+
+export interface KnowledgeGraphNode {
+  id: string;
+  type: "memory" | "person" | "theme" | "event";
+  label: string;
+  metadata: Record<string, string | number | boolean>;
+}
+
+export interface KnowledgeGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: "MENTIONS" | "HAS_THEME" | "RELATES_TO";
+}
+
+export interface KnowledgeGraph {
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+}
+
+export const memoryGraph: KnowledgeGraph = {
+  nodes: [
+    ...memories.map((m) => ({
+      id: `memory:${m.id}`,
+      type: "memory" as const,
+      label: m.summary,
+      metadata: {
+        sourceType: m.sourceType,
+        emotionalTone: m.emotionalTone,
+        approvedForUse: m.approvedForUse,
+      },
+    })),
+    { id: "person:dad", type: "person", label: "Dad", metadata: {} },
+    { id: "person:alex", type: "person", label: "Alex", metadata: {} },
+    { id: "theme:encouragement", type: "theme", label: "encouragement", metadata: {} },
+    { id: "theme:interviews", type: "theme", label: "interviews", metadata: {} },
+    { id: "theme:pride", type: "theme", label: "pride", metadata: {} },
+    { id: "theme:confidence", type: "theme", label: "confidence", metadata: {} },
+    { id: "event:evt-interview", type: "event", label: "Final job interview", metadata: { eventKind: "job_interview" } },
+    { id: "event:evt-lunch", type: "event", label: "Family Sunday lunch", metadata: { eventKind: "family_tradition" } },
+    { id: "event:evt-birthday", type: "event", label: "Mum's birthday", metadata: { eventKind: "family_tradition" } },
+  ],
+  edges: [
+    { id: "e1", source: "memory:mem-interview-eve", target: "person:dad", type: "MENTIONS" },
+    { id: "e2", source: "memory:mem-interview-eve", target: "theme:encouragement", type: "HAS_THEME" },
+    { id: "e3", source: "memory:mem-interview-eve", target: "theme:interviews", type: "HAS_THEME" },
+    { id: "e4", source: "memory:mem-interview-eve", target: "event:evt-interview", type: "RELATES_TO" },
+    { id: "e5", source: "memory:mem-first-day", target: "person:dad", type: "MENTIONS" },
+    { id: "e6", source: "memory:mem-first-day", target: "theme:pride", type: "HAS_THEME" },
+    { id: "e7", source: "memory:mem-first-day", target: "event:evt-lunch", type: "RELATES_TO" },
+    { id: "e8", source: "memory:mem-exam-line", target: "person:dad", type: "MENTIONS" },
+    { id: "e9", source: "memory:mem-exam-line", target: "theme:confidence", type: "HAS_THEME" },
+    { id: "e10", source: "memory:mem-exam-line", target: "theme:encouragement", type: "HAS_THEME" },
+    { id: "e11", source: "memory:mem-exam-line", target: "event:evt-interview", type: "RELATES_TO" },
+    { id: "e12", source: "memory:mem-interview-eve", target: "person:alex", type: "MENTIONS" },
+  ],
+};

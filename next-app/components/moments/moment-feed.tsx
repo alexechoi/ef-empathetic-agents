@@ -2,31 +2,22 @@
 
 import type { Moment, TraceStep } from "@/lib/moments";
 
+import type { MomentBodyProps } from "./decision-registry";
 import { MomentCard } from "./moment-card";
 import { PlannerTrace } from "./planner-trace";
-import { useMomentActions } from "./use-moment-actions";
 
-export function MomentFeed({
-  moments: initial,
-  trace,
-}: {
+type MomentFeedProps = Omit<MomentBodyProps, "moment"> & {
   moments: Moment[];
   trace?: TraceStep[];
-}) {
-  const { moments, approve, decline, onPlaybackChange } =
-    useMomentActions(initial);
+};
 
+/** Presentational feed: state lives in MomentsScreen via useMomentActions. */
+export function MomentFeed({ moments, trace, ...callbacks }: MomentFeedProps) {
   return (
     <div className="flex flex-col gap-4">
       {trace ? <PlannerTrace trace={trace} /> : null}
       {moments.map((moment) => (
-        <MomentCard
-          key={moment.id}
-          moment={moment}
-          onApprove={approve}
-          onDecline={decline}
-          onPlaybackChange={onPlaybackChange}
-        />
+        <MomentCard key={moment.id} moment={moment} {...callbacks} />
       ))}
     </div>
   );

@@ -1,8 +1,8 @@
 import { AppSidebar } from "@/components/app-sidebar";
-import { MomentFeed } from "@/components/moments/moment-feed";
+import { MomentsScreen } from "@/components/moments-screen";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { moments, plannerTrace } from "@/lib/moments";
+import { memories, moments, plannerTrace, recentCalls } from "@/lib/moments";
 
 export default function Page() {
   return (
@@ -17,15 +17,12 @@ export default function Page() {
       <AppSidebar variant="inset" />
       <SidebarInset>
         <SiteHeader />
-        <div className="flex flex-1 gap-6 p-4 lg:p-6">
-          <div className="min-w-0 flex-1">
-            <div className="mx-auto w-full max-w-2xl">
-              <MomentFeed moments={moments} trace={plannerTrace} />
-            </div>
-          </div>
-          {/* Rail slot — Dad panel lands here in commit 3. */}
-          <aside className="hidden w-80 shrink-0 xl:block" />
-        </div>
+        <MomentsScreen
+          initialMoments={moments}
+          trace={plannerTrace}
+          initialMemories={memories}
+          initialCalls={recentCalls}
+        />
       </SidebarInset>
     </SidebarProvider>
   );
