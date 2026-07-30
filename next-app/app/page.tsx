@@ -2,7 +2,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { MomentFeed } from "@/components/moments/moment-feed";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { moments } from "@/lib/moments";
+import { moments, plannerTrace } from "@/lib/moments";
 
 export default function Page() {
   return (
@@ -20,7 +20,7 @@ export default function Page() {
         <div className="flex flex-1 gap-6 p-4 lg:p-6">
           <div className="min-w-0 flex-1">
             <div className="mx-auto w-full max-w-2xl">
-              <MomentFeed moments={moments} />
+              <MomentFeed moments={moments} trace={plannerTrace} />
             </div>
           </div>
           {/* Rail slot — Dad panel lands here in commit 3. */}
