@@ -223,7 +223,10 @@ curl -N http://localhost:2024/calls/CONVERSATION_ID/stream
 This can emit `user_transcript`, `agent_response`, `agent_response_part`,
 `reasoning_summary`, `correction`, `tool`, and `call_ended`. It never forwards
 audio, prompts, tool payloads, dynamic variables, secrets, or hidden
-chain-of-thought. Monitoring is unavailable for dry-run conversations.
+chain-of-thought. Monitoring is unavailable for dry-run conversations. The
+default low-latency `gemini-2.5-flash-lite` configuration disables optional
+provider reasoning summaries; deterministic planner/caller decision traces and
+live transcript/response events remain available.
 
 List calls:
 
