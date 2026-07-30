@@ -1,17 +1,21 @@
 import { Router } from "express";
-import { GeneratePlansRequestSchema } from "../schemas.js";
+import {
+  GeneratePlansRequestSchema,
+  type OutreachPlan,
+  type TraceStep,
+} from "../schemas.js";
 import { asyncHandler, parseOrThrow } from "../lib/http.js";
 import { plannerGraph } from "../graph.js";
-import { getUser } from "../db/repositories/users.js";
-import { listEvents } from "../db/repositories/events.js";
-import { listMemories } from "../db/repositories/memories.js";
-import {
-  deletePlansForUser,
-  insertPlans,
-  listPlans,
-} from "../db/repositories/plans.js";
-import { countContactsSince } from "../db/repositories/calls.js";
+import { listPlans } from "../db/repositories/plans.js";
 import { logger } from "../lib/logger.js";
+import { endSse, sendSse, startSse } from "../lib/sse.js";
+import {
+  buildEventDecisions,
+  loadPlannerInput,
+  persistPlannerPlans,
+  runAndPersistPlanner,
+} from "../services/planner.js";
+import type { EventAssessment } from "../state.js";
 
 const log = logger.child({ route: "plans" });
 
@@ -25,29 +29,83 @@ plansRouter.post(
   "/generate",
   asyncHandler(async (req, res) => {
     const { userId } = parseOrThrow(GeneratePlansRequestSchema, req.body);
-
-    const profile = getUser(userId);
-    if (!profile) {
+    const result = await runAndPersistPlanner(userId);
+    if (!result) {
       res.status(404).json({ error: "User not found" });
       return;
     }
-
-    const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
-    const result = await plannerGraph.invoke({
-      profile,
-      events: listEvents(userId),
-      memories: listMemories(userId),
-      contactsThisWeek: countContactsSince(userId, sevenDaysAgo),
-      now: new Date().toISOString(),
-    });
-
-    deletePlansForUser(userId);
-    insertPlans(result.plans);
     log.info({ userId, plans: result.plans.length }, "Plans generated");
-
     res.status(201).json({ plans: result.plans, trace: result.trace });
   }),
 );
+
+interface PlannerStreamUpdate {
+  assessments?: EventAssessment[];
+  plans?: OutreachPlan[];
+  trace?: TraceStep[];
+}
+
+/** Streams each LangGraph node update and the final per-event decisions. */
+plansRouter.post("/generate/stream", async (req, res) => {
+  let userId: string;
+  try {
+    ({ userId } = parseOrThrow(GeneratePlansRequestSchema, req.body));
+  } catch (error) {
+    log.error({ err: error }, "Invalid planner stream request");
+    res.status(400).json({ error: "Validation failed" });
+    return;
+  }
+
+  const input = loadPlannerInput(userId);
+  if (!input) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  startSse(res);
+  const abort = new AbortController();
+  res.on("close", () => abort.abort());
+  sendSse(res, "started", { userId, at: new Date().toISOString() });
+
+  let assessments: EventAssessment[] = [];
+  let plans: OutreachPlan[] = [];
+
+  try {
+    const stream = await plannerGraph.stream(input, {
+      streamMode: "updates",
+      signal: abort.signal,
+    });
+    for await (const rawChunk of stream) {
+      const chunk = rawChunk as Record<string, PlannerStreamUpdate>;
+      for (const [node, update] of Object.entries(chunk)) {
+        if (update.assessments) assessments = update.assessments;
+        if (update.plans) plans = update.plans;
+        for (const step of update.trace ?? []) {
+          sendSse(res, "trace", { node, ...step });
+        }
+      }
+    }
+
+    persistPlannerPlans(userId, plans);
+    for (const decision of buildEventDecisions(
+      assessments,
+      plans,
+      input.profile.enabledEventTypes,
+    )) {
+      sendSse(res, "event_decision", decision);
+    }
+    sendSse(res, "plans", plans);
+    sendSse(res, "complete", { planCount: plans.length });
+    log.info({ userId, plans: plans.length }, "Planner stream complete");
+  } catch (error) {
+    if (!abort.signal.aborted) {
+      log.error({ err: error, userId }, "Planner stream failed");
+      sendSse(res, "error", { message: "Planner stream failed" });
+    }
+  } finally {
+    endSse(res);
+  }
+});
 
 plansRouter.get(
   "/",
