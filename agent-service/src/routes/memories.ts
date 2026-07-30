@@ -10,7 +10,9 @@ import {
   listMemories,
   setMemoryApproval,
 } from "../db/repositories/memories.js";
+import { listEvents } from "../db/repositories/events.js";
 import { logger } from "../lib/logger.js";
+import { buildMemoryGraph } from "../memory/graph.js";
 
 const log = logger.child({ route: "memories" });
 const upload = multer({ storage: multer.memoryStorage() });
@@ -86,6 +88,19 @@ memoriesRouter.get(
       return;
     }
     res.json(listMemories(userId));
+  }),
+);
+
+/** Derived nodes/edges projection for the memory visualization. */
+memoriesRouter.get(
+  "/graph",
+  asyncHandler(async (req, res) => {
+    const userId = req.query.userId;
+    if (typeof userId !== "string") {
+      res.status(400).json({ error: "userId query param is required" });
+      return;
+    }
+    res.json(buildMemoryGraph(listMemories(userId), listEvents(userId)));
   }),
 );
 
