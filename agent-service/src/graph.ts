@@ -1,29 +1,23 @@
 import { StateGraph, START, END } from "@langchain/langgraph";
-import { AgentState, type AgentStateType } from "./state.js";
-import { orchestrator } from "./nodes/orchestrator.js";
-import { caller } from "./nodes/caller.js";
-import { logger } from "./lib/logger.js";
-
-const log = logger.child({ module: "graph" });
-
-/**
- * Routes after the decision layer: only hand off to the caller when the brief
- * says we should reach out; otherwise finish.
- */
-function routeAfterBrief(state: AgentStateType): "caller" | typeof END {
-  const shouldCall = state.brief?.shouldCall ?? false;
-  log.info({ shouldCall }, "Routing after brief");
-  return shouldCall ? "caller" : END;
-}
+import { PlannerState } from "./state.js";
+import { evaluateImportance } from "./nodes/evaluateImportance.js";
+import { retrieveMemories } from "./nodes/retrieveMemories.js";
+import { generateProposal } from "./nodes/generateProposal.js";
+import { safetyValidator } from "./nodes/safetyValidator.js";
 
 /**
- * One orchestration service, two agents, shared state:
- *   orchestrator (decision layer) --> caller (call layer)
+ * The planner agent as a LangGraph workflow:
+ *   evaluate importance -> retrieve memories -> generate proposal -> safety.
+ * Each node appends a TraceStep so callers can render the live trace.
  */
-export const graph = new StateGraph(AgentState)
-  .addNode("orchestrator", orchestrator)
-  .addNode("caller", caller)
-  .addEdge(START, "orchestrator")
-  .addConditionalEdges("orchestrator", routeAfterBrief, ["caller", END])
-  .addEdge("caller", END)
+export const plannerGraph = new StateGraph(PlannerState)
+  .addNode("evaluateImportance", evaluateImportance)
+  .addNode("retrieveMemories", retrieveMemories)
+  .addNode("generateProposal", generateProposal)
+  .addNode("safetyValidator", safetyValidator)
+  .addEdge(START, "evaluateImportance")
+  .addEdge("evaluateImportance", "retrieveMemories")
+  .addEdge("retrieveMemories", "generateProposal")
+  .addEdge("generateProposal", "safetyValidator")
+  .addEdge("safetyValidator", END)
   .compile();

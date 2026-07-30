@@ -1,0 +1,10 @@
+{
+    "agents": [
+        {
+            "config": "agent_configs/Memory-Companion.json",
+            "id": "agent_5901kyt3m5ngfsrbgr4mb1rpfg69",
+            "version_id": "agtvrsn_3901kyt3nx3rfansj9491hahhb6q",
+            "branch_id": "agtbrch_0501kyt3m6hjeajbtmkhr1b629y0"
+        }
+    ]
+}
