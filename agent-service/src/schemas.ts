@@ -155,6 +155,8 @@ export const CallRecordSchema = z.object({
   conversationId: z.string().optional(),
   callSid: z.string().optional(),
   transcript: z.string().optional(),
+  reasoningSummaries: z.array(z.string()).optional(),
+  analysis: z.record(z.string(), z.unknown()).optional(),
   detail: z.string().optional(),
   createdAt: z.string(),
 });
@@ -169,6 +171,43 @@ export const TraceStepSchema = z.object({
   at: z.string(),
 });
 export type TraceStep = z.infer<typeof TraceStepSchema>;
+
+export const KnowledgeGraphNodeSchema = z.object({
+  id: z.string(),
+  type: z.enum(["memory", "person", "theme", "event"]),
+  label: z.string(),
+  metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
+});
+export type KnowledgeGraphNode = z.infer<typeof KnowledgeGraphNodeSchema>;
+
+export const KnowledgeGraphEdgeSchema = z.object({
+  id: z.string(),
+  source: z.string(),
+  target: z.string(),
+  type: z.enum(["MENTIONS", "HAS_THEME", "RELATES_TO"]),
+});
+export type KnowledgeGraphEdge = z.infer<typeof KnowledgeGraphEdgeSchema>;
+
+export const KnowledgeGraphSchema = z.object({
+  nodes: z.array(KnowledgeGraphNodeSchema),
+  edges: z.array(KnowledgeGraphEdgeSchema),
+});
+export type KnowledgeGraph = z.infer<typeof KnowledgeGraphSchema>;
+
+/** Auditable, frontend-safe explanation of one planner decision. */
+export const EventDecisionSchema = z.object({
+  eventId: z.string(),
+  title: z.string(),
+  eventKind: z.string(),
+  importance: z.number().min(0).max(1),
+  eventTypeEnabled: z.boolean(),
+  shouldContact: z.boolean(),
+  selectedMemoryIds: z.array(z.string()),
+  reasoningSummary: z.string(),
+  safetyStatus: SafetyStatusSchema,
+  failedGuardrails: z.array(SafetyCheckSchema),
+});
+export type EventDecision = z.infer<typeof EventDecisionSchema>;
 
 // --- Request DTOs (spec section 11) ---------------------------------------
 
