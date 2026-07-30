@@ -14,7 +14,7 @@
     },
     "tts": {
       "model_id": "eleven_turbo_v2",
-      "voice_id": "cjVigY5qzO86Huf0OWal",
+      "voice_id": "Bj7kiEa7RuVHFDzVFV3r",
       "supported_voices": [],
       "agent_output_audio_format": "pcm_16000",
       "optimize_streaming_latency": 3,
