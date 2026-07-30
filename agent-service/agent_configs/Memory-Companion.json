@@ -50,6 +50,7 @@
         "llm": "gemini-2.5-flash",
         "temperature": 0.4,
         "max_tokens": 1000,
+        "enable_reasoning_summary": true,
         "tool_ids": [],
         "mcp_server_ids": [],
         "native_mcp_server_ids": [],
