@@ -12,15 +12,16 @@ export interface BuildCallContextInput {
   event: CalendarEvent;
   plan: OutreachPlan;
   memories: Memory[];
+  knowledgeMemories: Memory[];
 }
 
 /**
- * Assembles the narrow, restricted context package handed to the call agent.
- * Only the plan's selected memories and the user's stated preferences flow in —
- * never the full memory store.
+ * Assembles the approved, user-scoped context package handed to the call agent.
+ * Planner-selected memories stay prominent while the complete approved memory
+ * set supports grounded follow-up questions.
  */
 export function buildCallContext(input: BuildCallContextInput): CallContext {
-  const { profile, event, plan, memories } = input;
+  const { profile, event, plan, memories, knowledgeMemories } = input;
   return CallContextSchema.parse({
     userName: profile.userName,
     lovedOneName: profile.lovedOneName,
@@ -28,6 +29,7 @@ export function buildCallContext(input: BuildCallContextInput): CallContext {
     event,
     purpose: plan.purpose ?? `Share a supportive memory before ${event.title}.`,
     memories,
+    knowledgeMemories,
     approvedOpeningMessage: plan.openingMessage ?? "",
     prohibitedTopics: profile.prohibitedTopics,
   });

@@ -201,6 +201,11 @@ curl -X POST http://localhost:2024/calls/trigger \
 `phoneNumber` is optional and defaults to the user's stored number. With
 `DRY_RUN=true`, the response is simulated but still persisted.
 
+Non-production runs bypass quiet hours and weekly frequency limits by default so
+repeated hack-demo calls are not blocked. Set `DEMO_BYPASS_CALL_LIMITS=false`
+to exercise those limits. Consent, approved-memory, prohibited-content,
+impersonation, advice, dependency and easy-decline checks are never bypassed.
+
 Stream caller preflight and initiation:
 
 ```bash
@@ -263,9 +268,7 @@ async function streamPost(
   });
   if (!response.ok || !response.body) throw new Error("Stream failed");
 
-  const reader = response.body
-    .pipeThrough(new TextDecoderStream())
-    .getReader();
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "";
 
   while (true) {
