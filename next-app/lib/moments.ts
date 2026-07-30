@@ -50,6 +50,8 @@ export interface Moment {
   eventId: string;
   title: string;
   when: string;
+  /** ISO event start — feeds the calendar week strip. */
+  startsAt?: string;
   decision: Decision;
   reasoningSummary: string;
   steps: MomentStep[];
@@ -286,6 +288,7 @@ export function toMoment(
     eventId: event.id,
     title: event.title,
     when: formatWhen(event.startsAt),
+    startsAt: event.startsAt,
     decision: decisionFromPlan(plan),
     reasoningSummary: decision?.reasoningSummary ?? plan.reasoningSummary,
     steps: decision ? stepsFromDecision(decision) : stepsFromPlan(plan),
