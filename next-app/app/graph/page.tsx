@@ -1,5 +1,5 @@
 import { AppSidebar } from "@/components/app-sidebar";
-import { GraphView } from "@/components/graph-view";
+import { GraphViewLive } from "@/components/graph-view-live";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { memoryGraph } from "@/lib/moments";
 
@@ -21,7 +21,7 @@ export default function GraphPage() {
             What he left behind, connected
           </span>
         </header>
-        <GraphView graph={memoryGraph} />
+        <GraphViewLive initial={memoryGraph} />
       </SidebarInset>
     </SidebarProvider>
   );

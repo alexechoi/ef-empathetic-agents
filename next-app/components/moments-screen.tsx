@@ -1,17 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { Loader2Icon, SparklesIcon } from "lucide-react";
 
 import type { PersonaState } from "@/components/ai-elements/persona";
 import { MemoriesColumn } from "@/components/memories/memories-column";
+import { Button } from "@/components/ui/button";
 import { MomentFeed } from "@/components/moments/moment-feed";
 import { useMomentActions } from "@/components/moments/use-moment-actions";
 import type { CallRecord, Memory, Moment, TraceStep } from "@/lib/moments";
 
 /**
  * The main screen: Moments (left) + Memories (right), each its own scroll
- * container. Owns all feed-level state so the Dad orb can react to playback
- * without prop drilling; commit 4 swaps the state internals for live API data.
+ * container. All state lives in useMomentActions — mock props seed it and
+ * are the fallback if agent-service is unreachable.
  */
 export function MomentsScreen({
   initialMoments,
@@ -24,9 +25,28 @@ export function MomentsScreen({
   initialMemories: Memory[];
   initialCalls: CallRecord[];
 }) {
-  const { moments, approve, decline, playingMomentId, onPlaybackChange } =
-    useMomentActions(initialMoments);
-  const [memories, setMemories] = useState(initialMemories);
+  const {
+    moments,
+    trace: liveTrace,
+    memories,
+    calls,
+    playingMomentId,
+    onPlaybackChange,
+    generating,
+    generate,
+    approve,
+    decline,
+    callingMomentId,
+    liveCall,
+    ingestText,
+    ingestAudio,
+    setMemoryApproved,
+  } = useMomentActions({
+    initialMoments,
+    initialTrace: trace ?? [],
+    initialMemories,
+    initialCalls,
+  });
 
   const dadState: PersonaState = playingMomentId
     ? "speaking"
@@ -34,43 +54,31 @@ export function MomentsScreen({
       ? "thinking"
       : "idle";
 
-  const addMemory = (memory: Memory) => setMemories((prev) => [memory, ...prev]);
-
-  const onIngestText = (text: string) =>
-    addMemory({
-      id: `mem-local-${Date.now()}`,
-      sourceType: "chat",
-      summary: text,
-      themes: ["unsorted"],
-      emotionalTone: "neutral",
-      approvedForUse: false,
-    });
-
-  const onIngestAudio = (file: File) =>
-    addMemory({
-      id: `mem-local-${Date.now()}`,
-      sourceType: "voice_note",
-      summary: `Voice note — ${file.name} (transcription pending)`,
-      themes: ["unsorted"],
-      emotionalTone: "neutral",
-      approvedForUse: false,
-    });
-
-  const onApprovedChange = (id: string, approved: boolean) =>
-    setMemories((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, approvedForUse: approved } : m)),
-    );
-
   return (
     <div className="lg:grid lg:h-[calc(100svh-var(--header-height)-1rem-2px)] lg:grid-cols-[3fr_2fr] lg:overflow-hidden">
       <div className="min-w-0 p-4 lg:overflow-y-auto lg:p-6">
-        <div className="mx-auto w-full max-w-2xl">
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h1 className="text-sm font-medium text-muted-foreground">
+              This week
+            </h1>
+            <Button size="sm" onClick={generate} disabled={generating}>
+              {generating ? (
+                <Loader2Icon className="animate-spin" />
+              ) : (
+                <SparklesIcon />
+              )}
+              Generate plans
+            </Button>
+          </div>
           <MomentFeed
             moments={moments}
-            trace={trace}
+            trace={liveTrace}
             onApprove={approve}
             onDecline={decline}
             onPlaybackChange={onPlaybackChange}
+            callingMomentId={callingMomentId}
+            liveCall={liveCall}
           />
         </div>
       </div>
@@ -78,10 +86,10 @@ export function MomentsScreen({
         <MemoriesColumn
           dadState={dadState}
           memories={memories}
-          calls={initialCalls}
-          onIngestText={onIngestText}
-          onIngestAudio={onIngestAudio}
-          onApprovedChange={onApprovedChange}
+          calls={calls}
+          onIngestText={ingestText}
+          onIngestAudio={ingestAudio}
+          onApprovedChange={setMemoryApproved}
         />
       </div>
     </div>

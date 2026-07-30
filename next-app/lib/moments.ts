@@ -26,11 +26,15 @@ export interface SafetyReport {
   checks: SafetyCheck[];
 }
 
+/** A single step emitted by the planner graph, surfaced as the live trace. */
 export interface TraceStep {
   step: string;
   label: string;
   status: "ok" | "skip" | "blocked" | "info";
   detail?: string;
+  /** Present on live-streamed steps; absent on mock/static trace data. */
+  at?: string;
+  node?: string;
 }
 
 /** One derived deliberation row on a card, mirroring the 4 planner nodes. */
@@ -42,6 +46,8 @@ export interface MomentStep {
 
 export interface Moment {
   id: string;
+  /** Backend CalendarEvent id — event_decision SSE events key by this, not planId. */
+  eventId: string;
   title: string;
   when: string;
   decision: Decision;
@@ -53,6 +59,243 @@ export interface Moment {
   audioSrc?: string;
   memoryIds: string[];
   safetyReport?: SafetyReport;
+}
+
+// --- Backend shapes (copied from agent-service/src/schemas.ts) --------------
+
+export interface CalendarEvent {
+  id: string;
+  userId: string;
+  title: string;
+  description?: string;
+  startsAt: string;
+  endsAt?: string;
+  attendees: string[];
+  location?: string;
+}
+
+export type Channel = "phone_call" | "voice_note";
+
+export interface OutreachPlan {
+  id: string;
+  userId: string;
+  eventId: string;
+  shouldContact: boolean;
+  proposedTime?: string;
+  channel?: Channel;
+  purpose?: string;
+  selectedMemoryIds: string[];
+  openingMessage?: string;
+  confidence: number;
+  reasoningSummary: string;
+  safetyStatus: "pending" | "approved" | "blocked";
+  safetyReport?: SafetyReport;
+  createdAt: string;
+}
+
+/** Auditable, frontend-safe explanation of one planner decision (SSE event). */
+export interface EventDecision {
+  eventId: string;
+  title: string;
+  eventKind: string;
+  importance: number;
+  eventTypeEnabled: boolean;
+  shouldContact: boolean;
+  selectedMemoryIds: string[];
+  reasoningSummary: string;
+  safetyStatus: "pending" | "approved" | "blocked";
+  failedGuardrails: SafetyCheck[];
+}
+
+// --- Adapter: backend shapes -> UI view-model --------------------------------
+
+/**
+ * Decision mapping (see SPEC.md "Data model"): the backend has no ask/sent
+ * distinction — consent is a UI state layered on top of approved plans.
+ * `reach_out` is set post-approval by use-moment-actions, never derived here.
+ */
+export function decisionFromPlan(plan: {
+  shouldContact: boolean;
+  safetyStatus: "pending" | "approved" | "blocked";
+}): Decision {
+  if (!plan.shouldContact) return "stay_quiet";
+  if (plan.safetyStatus === "blocked") return "held_back";
+  return "ask_first";
+}
+
+/** Per-card steps derived from plan fields — fallback for GET /plans + mocks. */
+export function stepsFromPlan(plan: OutreachPlan): MomentStep[] {
+  const steps: MomentStep[] = [
+    {
+      label: "Assessed importance",
+      detail: `${plan.reasoningSummary} — confidence ${Math.round(plan.confidence * 100)}%`,
+      tone: "ok",
+    },
+    {
+      label:
+        plan.selectedMemoryIds.length > 0
+          ? "Retrieved memories"
+          : "No memories retrieved",
+      detail:
+        plan.selectedMemoryIds.length > 0
+          ? `${plan.selectedMemoryIds.length} memor${plan.selectedMemoryIds.length === 1 ? "y" : "ies"} selected`
+          : undefined,
+      tone: plan.selectedMemoryIds.length > 0 ? "ok" : "muted",
+    },
+    {
+      label: plan.shouldContact ? "Proposed outreach" : "No contact proposed",
+      detail: plan.purpose,
+      tone: plan.shouldContact ? "ok" : "muted",
+    },
+  ];
+
+  if (plan.safetyStatus === "blocked") {
+    const failed = plan.safetyReport?.checks.filter((c) => !c.passed) ?? [];
+    steps.push({
+      label: "Blocked by safety",
+      detail:
+        failed.length > 0
+          ? failed
+              .map((c) => `${c.name}${c.detail ? ` — ${c.detail}` : ""}`)
+              .join("; ")
+          : undefined,
+      tone: "blocked",
+    });
+  } else if (plan.safetyStatus === "approved") {
+    steps.push({ label: "Safety checks passed", tone: "ok" });
+  } else {
+    steps.push({ label: "Awaiting safety review", tone: "muted" });
+  }
+
+  return steps;
+}
+
+/** Richer per-card steps derived from the stream's event_decision payload. */
+export function stepsFromDecision(decision: EventDecision): MomentStep[] {
+  const importancePct = Math.round(decision.importance * 100);
+  const steps: MomentStep[] = [
+    {
+      label: "Assessed importance",
+      detail: `${decision.eventKind.replaceAll("_", " ")} — importance ${importancePct}%${
+        decision.eventTypeEnabled ? "" : " (event type not enabled)"
+      }`,
+      tone: decision.eventTypeEnabled ? "ok" : "muted",
+    },
+    {
+      label:
+        decision.selectedMemoryIds.length > 0
+          ? "Retrieved memories"
+          : "No memories retrieved",
+      detail:
+        decision.selectedMemoryIds.length > 0
+          ? `${decision.selectedMemoryIds.length} memor${decision.selectedMemoryIds.length === 1 ? "y" : "ies"} selected`
+          : undefined,
+      tone: decision.selectedMemoryIds.length > 0 ? "ok" : "muted",
+    },
+    {
+      label: decision.shouldContact ? "Proposed outreach" : "No contact proposed",
+      detail: decision.reasoningSummary,
+      tone: decision.shouldContact ? "ok" : "muted",
+    },
+  ];
+
+  if (decision.safetyStatus === "blocked") {
+    steps.push({
+      label: "Blocked by safety",
+      detail:
+        decision.failedGuardrails.length > 0
+          ? decision.failedGuardrails
+              .map((c) => `${c.name}${c.detail ? ` — ${c.detail}` : ""}`)
+              .join("; ")
+          : undefined,
+      tone: "blocked",
+    });
+  } else if (decision.safetyStatus === "approved") {
+    steps.push({ label: "Safety checks passed", tone: "ok" });
+  } else {
+    steps.push({ label: "Awaiting safety review", tone: "muted" });
+  }
+
+  return steps;
+}
+
+/** Maps a run-level TraceStep's status onto a card-level MomentStep tone. */
+export function traceToMomentStep(step: TraceStep): MomentStep {
+  return {
+    label: step.label,
+    detail: step.detail,
+    tone:
+      step.status === "blocked" ? "blocked" : step.status === "skip" ? "muted" : "ok",
+  };
+}
+
+/**
+ * Deterministic, timezone-correct "when" copy. Today/Tomorrow are determined
+ * by comparing `en-CA` (YYYY-MM-DD) date strings in Europe/London — never by
+ * doing our own DST-sensitive date math.
+ */
+export function formatWhen(startsAt: string): string {
+  const date = new Date(startsAt);
+  const dayKey = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const timeFmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  const todayKey = dayKey.format(new Date());
+  const tomorrowKey = dayKey.format(new Date(Date.now() + 86_400_000));
+  const dateKey = dayKey.format(date);
+  const time = timeFmt.format(date);
+
+  if (dateKey === todayKey) return `Today, ${time}`;
+  if (dateKey === tomorrowKey) return `Tomorrow, ${time}`;
+
+  const longFmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+  return `${longFmt.format(date)}, ${time}`;
+}
+
+/** Pre-generated ElevenLabs demo clips, keyed by calendar event id. */
+export const AUDIO_BY_EVENT: Record<string, string> = {
+  "evt-interview": "/audio/interview.mp3",
+  "evt-birthday": "/audio/birthday.mp3",
+};
+
+/**
+ * Joins a CalendarEvent and its OutreachPlan into the UI view-model. Steps
+ * come from the richer `EventDecision` when the live stream provided one,
+ * else are hand-derived from the plan fields (GET /plans path, mock data).
+ */
+export function toMoment(
+  event: CalendarEvent,
+  plan: OutreachPlan,
+  decision?: EventDecision,
+): Moment {
+  return {
+    id: plan.id,
+    eventId: event.id,
+    title: event.title,
+    when: formatWhen(event.startsAt),
+    decision: decisionFromPlan(plan),
+    reasoningSummary: decision?.reasoningSummary ?? plan.reasoningSummary,
+    steps: decision ? stepsFromDecision(decision) : stepsFromPlan(plan),
+    confidence: plan.confidence,
+    purpose: plan.purpose,
+    openingMessage: plan.openingMessage,
+    audioSrc: AUDIO_BY_EVENT[event.id],
+    memoryIds: plan.selectedMemoryIds,
+    safetyReport: plan.safetyReport,
+  };
 }
 
 // --- Synthetic demo data (mirrors agent-service/src/db/seed.ts) -------------
@@ -95,6 +338,7 @@ export const memories: Memory[] = [
 export const moments: Moment[] = [
   {
     id: "plan-interview",
+    eventId: "evt-interview",
     title: "Final job interview",
     when: "Tomorrow, 10:00 AM",
     decision: "reach_out",
@@ -140,6 +384,7 @@ export const moments: Moment[] = [
   },
   {
     id: "plan-birthday",
+    eventId: "evt-birthday",
     title: "Mum's birthday",
     when: "Friday",
     decision: "ask_first",
@@ -185,6 +430,7 @@ export const moments: Moment[] = [
   },
   {
     id: "plan-lunch",
+    eventId: "evt-lunch",
     title: "Family Sunday lunch",
     when: "Sunday, 1:00 PM",
     decision: "held_back",
@@ -230,6 +476,7 @@ export const moments: Moment[] = [
   },
   {
     id: "plan-tuesday",
+    eventId: "evt-tuesday",
     title: "Tuesday",
     when: "Nothing planned",
     decision: "stay_quiet",
