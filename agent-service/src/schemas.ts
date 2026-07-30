@@ -126,14 +126,17 @@ export const OutreachPlanSchema = z.object({
 });
 export type OutreachPlan = z.infer<typeof OutreachPlanSchema>;
 
-/** The narrow package handed to the call agent. No unrestricted data access. */
+/** Approved, user-scoped context handed to the call agent. */
 export const CallContextSchema = z.object({
   userName: z.string(),
   lovedOneName: z.string(),
   relationship: z.string().default("loved one"),
   event: CalendarEventSchema,
   purpose: z.string(),
+  /** Event-specific memories selected by the planner. */
   memories: z.array(MemorySchema),
+  /** Every currently approved memory available for grounded follow-up answers. */
+  knowledgeMemories: z.array(MemorySchema),
   approvedOpeningMessage: z.string(),
   prohibitedTopics: z.array(z.string()).default([]),
 });
