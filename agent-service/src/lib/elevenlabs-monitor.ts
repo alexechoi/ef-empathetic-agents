@@ -159,6 +159,7 @@ export function monitorConversation(
     socket.on("open", () => {
       opened = true;
       log.info({ conversationId }, "Connected to live call monitor");
+      onEvent({ event: "monitor_connected", data: { conversationId } });
     });
     socket.on("message", (raw: RawData) => {
       try {

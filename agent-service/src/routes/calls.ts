@@ -151,7 +151,7 @@ callsRouter.get("/:conversationId/stream", async (req, res) => {
   startSse(res);
   const abort = new AbortController();
   res.on("close", () => abort.abort());
-  sendSse(res, "monitor_connected", { conversationId });
+  sendSse(res, "monitor_connecting", { conversationId });
 
   try {
     await monitorConversation(
