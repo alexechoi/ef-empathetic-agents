@@ -63,36 +63,65 @@ Rules:
 
 ---
 
-## Data model (UI-facing only — backend undefined, shape is throwaway)
+## Backend contract (agent-service, now on main)
 
-`lib/moments.ts`:
+The service is Express + SQLite + a LangGraph planner
+(`evaluateImportance → retrieveMemories → generateProposal → safetyValidator`).
+Zod schemas in `agent-service/src/schemas.ts` are the **single source of truth**
+— the UI copies those shapes, never invents parallel ones.
+
+Endpoints the UI will consume (wiring is commit 4, not this spec's commits):
+- `POST /plans/generate { userId }` → `{ plans: OutreachPlan[], trace: TraceStep[] }`
+- `GET /plans?userId=` → `OutreachPlan[]`
+- `GET /events?userId=`, `GET /memories?userId=`
+- `POST /calls { planId }` → triggers the ElevenLabs call
+- Seeded demo user: `demo-user` — **Alex** (user) + **Dad** (loved one).
+  Demo copy in the UI uses Alex, not Maya.
+
+## Data model (UI view-model over backend shapes)
+
+A **moment** is the UI join of a `CalendarEvent` and its `OutreachPlan`.
+`lib/moments.ts` keeps the view-model + a pure adapter, so mock data and
+API data flow through the same function:
 
 ```ts
-export type Decision = "reach_out" | "ask_first" | "stay_quiet";
+export type Decision = "reach_out" | "ask_first" | "stay_quiet" | "held_back";
 
-export interface Memory {
-  id: string;
-  kind: "voice_note" | "chat" | "story";
-  title: string;        // "Voice note — before your uni interview, 2021"
-  excerpt: string;
-}
+// Mapping (in the adapter, not in components):
+//   plan.shouldContact === false                    -> "stay_quiet"
+//   shouldContact && safetyStatus === "approved"    -> "reach_out"
+//   shouldContact && safetyStatus === "pending"     -> "ask_first"
+//   shouldContact && safetyStatus === "blocked"     -> "held_back"  (safety layer visible!)
 
 export interface Moment {
-  id: string;
-  title: string;        // "Job interview — Vercel"
-  when: string;         // "Tomorrow, 9:00 AM"
+  id: string;                 // plan id (or event id for planless events)
+  title: string;              // event.title
+  when: string;               // formatted event.startsAt
   decision: Decision;
-  reasoning: string[];  // rendered as chain-of-thought steps
-  message?: {
-    text: string;       // transcript
-    audioSrc: string;   // /audio/interview.mp3 (pre-generated, in public/)
-    memoryIds: string[];
-  };
+  reasoningSummary: string;   // plan.reasoningSummary
+  trace: TraceStep[];         // filtered per-plan from the run trace
+  confidence?: number;        // plan.confidence
+  purpose?: string;           // plan.purpose
+  openingMessage?: string;    // plan.openingMessage — the transcript
+  audioSrc?: string;          // pre-generated clip for demo playback
+  memoryIds: string[];        // plan.selectedMemoryIds
+  safetyReport?: SafetyReport; // surfaced as care/trust UI
 }
+
+// TraceStep, Memory, SafetyReport: copy the types from agent-service/src/schemas.ts
+// (step/label/status ok|skip|blocked|info; Memory has summary, themes,
+// sourceType, sensitivity, approvedForUse).
+
+export function toMoment(event: CalendarEvent, plan?: OutreachPlan, trace?: TraceStep[]): Moment
 ```
 
-Mock: 3 moments — interview (`reach_out`), mum's birthday (`ask_first`),
-empty Tuesday (`stay_quiet`) — plus ~5 dad `Memory` items. Synthetic only.
+Mock: 3–4 moments — interview (`reach_out`), mum's birthday (`ask_first`),
+empty Tuesday (`stay_quiet`), optionally one `held_back` to demo the safety
+layer — plus ~5 Dad `Memory` items in backend shape. Synthetic only.
+
+The `held_back` decision is one registry entry + one body file — proof the
+registry pattern holds. Its body renders the failed `SafetyCheck` rows: this is
+the "note on care" judging criterion made visible.
 
 ---
 
@@ -131,17 +160,22 @@ rail at ≥xl doesn't shift the feed; build passes.
 
 - `components/moments/moment-card.tsx` — add collapsible deliberation above the
   body slot: `chain-of-thought.tsx` compound (`ChainOfThought` +
-  `ChainOfThoughtHeader` + `ChainOfThoughtStep` per `reasoning[]` entry).
-  Default collapsed; `defaultOpen` prop threaded so the demo can pre-expand one card.
+  `ChainOfThoughtHeader` + `ChainOfThoughtStep` per `trace` entry — map
+  TraceStep `status` to step styling: `blocked` → destructive tint, `skip` →
+  muted). This mirrors the planner's real trace so commit-4 wiring is a data
+  swap, not a rework. Default collapsed; `defaultOpen` threaded for the demo.
 - `components/moments/bodies/reach-out-body.tsx` — `audio-player.tsx` compound
   (`AudioPlayer` + `AudioPlayerElement src` + `AudioPlayerControlBar` with
   play/seek/time) + transcript as plain muted `<p>`.
 - `components/moments/bodies/ask-first-body.tsx` — `confirmation.tsx` compound:
   `ConfirmationRequest` ("Dad would usually call before this — want a message?")
   with `ConfirmationActions` wired to `onApprove`/`onDecline` **props** (no state
-  inside).
+  inside). Approve later maps to `POST /calls { planId }`.
 - `components/moments/bodies/stay-quiet-body.tsx` — nothing beyond collapsed
   reasoning. Silence is the UI.
+- `components/moments/bodies/held-back-body.tsx` — safety layer made visible:
+  failed `SafetyCheck` rows ("quiet hours", "sensitivity too high") in muted
+  destructive styling. No audio, no actions — the system chose care.
 - `components/moments/use-moment-actions.ts` — feed-level overrides map;
   approve flips a moment to `reach_out` (revealing the player), decline to
   `stay_quiet`. Cards stay dumb.
@@ -183,8 +217,18 @@ unreachable.
 
 ---
 
+## Commit 4 (future) — wiring, for orientation only
+
+Not part of this spec's build, but the shape is now known:
+- `page.tsx` fetches `GET /events` + `GET /plans?userId=demo-user`, maps through
+  `toMoment()`.
+- "Generate" action calls `POST /plans/generate` and re-renders the feed with
+  the returned `trace`.
+- `use-moment-actions.ts` approve → `POST /calls { planId }`; playback state
+  unchanged.
+- Everything else (bodies, registry, cards, panels) is untouched — that is the
+  point of the architecture rules above.
+
 ## Out of scope
 
-Backend wiring (LangGraph SDK), live ElevenLabs calls, calendar ingestion, upload
-flow. UI-first with mock data behind one hook + one import site, so wiring later
-touches `use-moment-actions.ts` and `page.tsx` only.
+Live ElevenLabs calls from the UI, calendar ingestion, upload flow, auth.

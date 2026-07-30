@@ -63,7 +63,7 @@ export const moments: Moment[] = [
     when: "Tomorrow, 9:00 AM",
     decision: "reach_out",
     reasoning: [
-      "High-stakes moment on Maya's calendar in under 24 hours.",
+      "High-stakes moment on Alex's calendar in under 24 hours.",
       "Dad had a pre-interview ritual: a pep talk the night before.",
       "Found a matching memory — his voice note before her uni interview.",
       "Last check-in was 9 days ago; a message now supports, not crowds.",
@@ -71,7 +71,7 @@ export const moments: Moment[] = [
     ],
     message: {
       text:
-        "Hey May. Big one tomorrow. Remember what I told you before your uni interview — you've never once walked into a room you didn't belong in. Eggs on toast in the morning, terrible coffee, and go show them. Call your mum after.",
+        "Hey Alex. Big one tomorrow. Remember what I told you before your uni interview — you've never once walked into a room you didn't belong in. Eggs on toast in the morning, terrible coffee, and go show them. Call your mum after.",
       audioSrc: "/audio/interview.mp3",
       memoryIds: ["mem-uni-interview", "mem-lucky-breakfast", "mem-first-job"],
     },
@@ -85,7 +85,7 @@ export const moments: Moment[] = [
       "Emotionally heavy date: first family birthday since Dad passed.",
       "He never missed it — there's a voice note of him singing in 2022.",
       "Grief anniversaries cut both ways; a surprise message could hurt.",
-      "Decision: ask Maya first instead of reaching out unprompted.",
+      "Decision: ask Alex first instead of reaching out unprompted.",
     ],
   },
   {
@@ -95,7 +95,7 @@ export const moments: Moment[] = [
     decision: "stay_quiet",
     reasoning: [
       "No significant events on the calendar.",
-      "No signals that Maya wants company today.",
+      "No signals that Alex wants company today.",
       "Reached out 2 days ago — presence needs space to mean something.",
       "Decision: stay quiet.",
     ],
