@@ -1,56 +1,60 @@
 import { Annotation } from "@langchain/langgraph";
-
-export interface Contact {
-  /** Human-friendly name used to personalise the outreach. */
-  name: string;
-  /** Destination phone number in E.164 format, e.g. "+14155551234". */
-  phoneNumber: string;
-}
-
-/**
- * The brief is the output of the decision layer (orchestrator). It captures
- * whether we should reach out and, if so, exactly what the caller agent needs.
- */
-export interface Brief {
-  shouldCall: boolean;
-  /** Why we did / didn't decide to reach out. */
-  reason: string;
-  /** The goal of the call, in one sentence. */
-  objective: string;
-  /** Opening line the voice agent should say. */
-  firstMessage: string;
-  /** Runtime values injected into the ElevenLabs agent prompt. */
-  dynamicVariables: Record<string, string>;
-}
-
-export type CallStatus = "initiated" | "skipped" | "failed";
-
-export interface CallResult {
-  status: CallStatus;
-  /** ElevenLabs conversation id, when a call was placed. */
-  conversationId?: string;
-  /** Twilio call SID, when available. */
-  callSid?: string;
-  /** Human-readable detail (error message, simulation note, etc.). */
-  detail?: string;
-}
+import type {
+  CalendarEvent,
+  Memory,
+  OutreachPlan,
+  TraceStep,
+  UserProfile,
+} from "./schemas.js";
 
 const replace = <T>(_prev: T, next: T): T => next;
+const append = <T>(prev: T[], next: T[]): T[] => [...prev, ...next];
+
+/** Per-event importance verdict produced by the first planner node. */
+export interface EventAssessment {
+  event: CalendarEvent;
+  eventKind: string;
+  important: boolean;
+  importance: number;
+  reason: string;
+}
 
 /**
- * Shared graph state. Both agents read and write the same object, which
- * LangGraph checkpoints per thread so state survives across a conversation.
+ * Shared planner state. Inputs are loaded from SQLite before invocation; the
+ * nodes progressively fill `assessments`, `selections`, `plans` and always
+ * append to `trace` so the caller can surface a live workflow trace.
  */
-export const AgentState = Annotation.Root({
-  contact: Annotation<Contact>({ reducer: replace }),
-  /** Free-text situation describing why we might reach out. */
-  context: Annotation<string>({ reducer: replace, default: () => "" }),
-  brief: Annotation<Brief | null>({ reducer: replace, default: () => null }),
-  callResult: Annotation<CallResult | null>({
+export const PlannerState = Annotation.Root({
+  profile: Annotation<UserProfile>({ reducer: replace }),
+  events: Annotation<CalendarEvent[]>({ reducer: replace, default: () => [] }),
+  memories: Annotation<Memory[]>({ reducer: replace, default: () => [] }),
+  contactsThisWeek: Annotation<number>({ reducer: replace, default: () => 0 }),
+  now: Annotation<string>({
     reducer: replace,
-    default: () => null,
+    default: () => new Date().toISOString(),
   }),
+  assessments: Annotation<EventAssessment[]>({
+    reducer: replace,
+    default: () => [],
+  }),
+  /** eventId -> selected memory ids. */
+  selections: Annotation<Record<string, string[]>>({
+    reducer: replace,
+    default: () => ({}),
+  }),
+  plans: Annotation<OutreachPlan[]>({ reducer: replace, default: () => [] }),
+  trace: Annotation<TraceStep[]>({ reducer: append, default: () => [] }),
 });
 
-export type AgentStateType = typeof AgentState.State;
-export type AgentUpdate = typeof AgentState.Update;
+export type PlannerStateType = typeof PlannerState.State;
+export type PlannerUpdate = typeof PlannerState.Update;
+
+/** Helper to build a trace step with a timestamp. */
+export function trace(
+  step: string,
+  label: string,
+  status: TraceStep["status"],
+  detail?: string,
+): TraceStep {
+  return { step, label, status, detail, at: new Date().toISOString() };
+}
