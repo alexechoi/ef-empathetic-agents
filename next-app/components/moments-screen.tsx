@@ -6,6 +6,7 @@ import type { PersonaState } from "@/components/ai-elements/persona";
 import { MemoriesColumn } from "@/components/memories/memories-column";
 import { Button } from "@/components/ui/button";
 import { MomentFeed } from "@/components/moments/moment-feed";
+import { WeekStrip } from "@/components/moments/week-strip";
 import { useMomentActions } from "@/components/moments/use-moment-actions";
 import type { CallRecord, Memory, Moment, TraceStep } from "@/lib/moments";
 
@@ -48,11 +49,12 @@ export function MomentsScreen({
     initialCalls,
   });
 
-  const dadState: PersonaState = playingMomentId
-    ? "speaking"
-    : moments.some((m) => m.decision === "ask_first")
-      ? "thinking"
-      : "idle";
+  const dadState: PersonaState =
+    liveCall?.status === "live" || playingMomentId
+      ? "speaking"
+      : moments.some((m) => m.decision === "ask_first")
+        ? "thinking"
+        : "idle";
 
   return (
     <div className="lg:grid lg:h-[calc(100svh-var(--header-height)-1rem-2px)] lg:grid-cols-[3fr_2fr] lg:overflow-hidden">
@@ -71,6 +73,7 @@ export function MomentsScreen({
               Generate plans
             </Button>
           </div>
+          <WeekStrip moments={moments} />
           <MomentFeed
             moments={moments}
             trace={liveTrace}

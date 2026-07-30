@@ -54,7 +54,8 @@ export function MomentCard({
   liveCall,
   ...callbacks
 }: MomentCardProps) {
-  const { label, badgeVariant, Body } = decisionRegistry[moment.decision];
+  const { label, badgeVariant, badgeClassName, Body } =
+    decisionRegistry[moment.decision];
   const quiet = moment.decision === "stay_quiet";
 
   return (
@@ -72,7 +73,9 @@ export function MomentCard({
               Calling…
             </Badge>
           ) : (
-            <Badge variant={badgeVariant}>{label}</Badge>
+            <Badge variant={badgeVariant} className={badgeClassName}>
+              {label}
+            </Badge>
           )}
         </CardAction>
       </CardHeader>
