@@ -106,6 +106,22 @@ Endpoints the UI consumes (wired in commit 4; full docs in agent-service/README.
 - `POST /calls/trigger { planId, phoneNumber? }` → re-runs guardrails, dials
   ElevenLabs "Memory Companion" agent (DRY_RUN simulates), returns
   `{ status, safetyReport, call }`
+- **SSE (added in the latest main, prefer these in commit 4):**
+  - `POST /plans/generate/stream` — events: `started` → `trace` (one per
+    planner node, live) → `event_decision` (one per event, see below) →
+    `plans` → `complete` / `error`
+  - `POST /calls/trigger/stream`, `GET /calls/:conversationId/stream` — live
+    call status via the ElevenLabs monitor
+- `GET /memories/graph?userId=` → `KnowledgeGraph`
+  `{ nodes: {id, type: memory|person|theme|event, label, metadata},
+     edges: {id, source, target, type: MENTIONS|HAS_THEME|RELATES_TO} }` —
+  deterministic, computed on read, never includes transcripts
+- **`EventDecision`** (per-event, from the stream's `event_decision` events):
+  `{ eventId, title, eventKind, importance, eventTypeEnabled, shouldContact,
+     selectedMemoryIds, reasoningSummary, safetyStatus, failedGuardrails }` —
+  the backend's own auditable per-card explanation. **`toMoment` consumes this
+  when present**; the hand-derived steps from plan fields are the fallback for
+  the non-stream `GET /plans` path and for mock data.
 - Seeded demo user: `demo-user` — **Alex** (user) + **Dad** (father).
   Consent flags on the profile: `proactiveCallsConsent: true`,
   `maxContactsPerWeek: 1`, `prohibitedTopics: ["medical diagnoses", "money problems"]`.
@@ -296,10 +312,11 @@ Restructure to the locked layout, still on mock data.
 - `components/memories/memories-column.tsx` — composes the four above.
 - `app/graph/page.tsx` — the judges' visual, kept as its own page:
   `canvas.tsx` (React Flow wrapper): register `node.tsx`/`edge.tsx` via
-  `nodeTypes`/`edgeTypes`; memory nodes (`NodeTitle`/`NodeDescription` from
-  `sourceType`/`summary`) + theme nodes from `themes` ("encouragement",
-  "interviews", "confidence") linked by edges. Static `{ id, position, data }`
-  derived from `lib/moments.ts`.
+  `nodeTypes`/`edgeTypes`. **Render the backend's `KnowledgeGraph` shape**
+  (mock data in this commit, shaped exactly like `GET /memories/graph`):
+  node card styling by `type` (memory / person / theme / event), edges from
+  `{source, target}`. Simple deterministic layout (type-based columns or a
+  radial fan) — positions are the UI's job; the API sends none.
 - `components/app-sidebar.tsx` — nav: Moments (`/`), **Memory graph**
   (`/graph`), Settings (`#`).
 
@@ -330,13 +347,20 @@ bodies/cards/registry are untouched by design.
   pre-generated `audioSrc` by eventId for the demo cards).
 - `moments-screen.tsx` — loads live data on mount (`getEvents` + `getPlans` +
   `getMemories` + `getCalls`), seeds `useMomentActions` with it; falls back to
-  mock. **Generate plans** `Button` in the left column header: calls
-  `generatePlans`, replaces feed + planner trace with the real run.
+  mock. **Generate plans** `Button` in the left column header: prefer
+  `POST /plans/generate/stream` (fetch + ReadableStream SSE parse — no
+  library): `trace` events append to the planner-trace block **live**,
+  `event_decision` events update each card's deliberation as they arrive,
+  `plans` event swaps the feed. Fall back to the non-stream POST on error.
 - `use-moment-actions.ts` — approve on ask-first → `triggerCall(planId)`
   immediately (the confirmation card IS the consent step — best demo beat:
   click → phone rings). Card shows a transient "Calling…" state
   (`Badge` + spinner) until the 201 lands, then flips to `reach_out` with the
   call status; on error, revert + `sonner` toast. `DRY_RUN=true` in dev.
+  Stretch: `GET /calls/:conversationId/stream` to tick the call status live
+  (initiated → in-progress → completed) in Recent calls.
+- `app/graph/page.tsx` — swap mock for `GET /memories/graph` (same shape by
+  construction; fallback to mock).
 - `ingest-box.tsx` — submit → `ingestText` / `uploadAudio`, then refresh
   memories list (extraction runs server-side); approve switch → `approveMemory`.
 - `recent-calls.tsx` — render live `getCalls` rows (status: initiated /
