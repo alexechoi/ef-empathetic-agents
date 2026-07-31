@@ -5,7 +5,9 @@ import { toast } from "sonner";
 
 import * as api from "@/lib/api";
 import {
+  AUDIO_BY_EVENT,
   decisionFromPlan,
+  formatWhen,
   stepsFromDecision,
   toMoment,
   traceToMomentStep,
@@ -67,10 +69,14 @@ export function useMomentActions({
   initialMemories: Memory[];
   initialCalls: CallRecord[];
 }) {
-  const [moments, setMoments] = useState<Moment[]>(initialMoments);
-  const [trace, setTrace] = useState<TraceStep[]>(initialTrace);
+  // The feed starts EMPTY: real plans populate it (on load or streamed in
+  // during generate). The mock initial* data is used only if agent-service is
+  // unreachable, so the demo still renders offline.
+  const [moments, setMoments] = useState<Moment[]>([]);
+  const [trace, setTrace] = useState<TraceStep[]>([]);
   const [memories, setMemories] = useState<Memory[]>(initialMemories);
   const [calls, setCalls] = useState<CallRecord[]>(initialCalls);
+  const [loading, setLoading] = useState(true);
   const [playingMomentId, setPlayingMomentId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [callingMomentId, setCallingMomentId] = useState<string | null>(null);
@@ -104,7 +110,8 @@ export function useMomentActions({
     if (mapped.length > 0) setMoments(mapped);
   }, []);
 
-  // --- Initial load: live data wins; empty plans or any failure keep mocks ---
+  // --- Initial load: plans populate the feed; no plans = honest empty state;
+  // service unreachable = mock fallback so the demo renders offline. ---
   useEffect(() => {
     if (loadedRef.current) return; // idempotent across StrictMode's double effect
     loadedRef.current = true;
@@ -124,10 +131,14 @@ export function useMomentActions({
         setMemories(liveMemories);
         setCalls(liveCalls);
       } catch {
-        // agent-service unreachable — mocks stay as the demo fallback.
+        setMoments(initialMoments);
+        setTrace(initialTrace);
+      } finally {
+        setLoading(false);
       }
     })();
-  }, [rebuildMomentsFromPlans]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Close any open live-call monitor on unmount.
   useEffect(() => () => monitorRef.current?.close(), []);
@@ -238,13 +249,39 @@ export function useMomentActions({
             } else if (event === "event_decision") {
               const decision = data as EventDecision;
               decisionsRef.current.set(decision.eventId, decision);
-              patchMomentByEvent(decision.eventId, (m) => ({
-                ...m,
-                decision: decisionFromPlan(decision),
-                reasoningSummary: decision.reasoningSummary,
-                steps: stepsFromDecision(decision),
-                memoryIds: decision.selectedMemoryIds,
-              }));
+              // Upsert: patch the card if it exists, otherwise pop a new one
+              // into the feed as the decision streams in.
+              setMoments((prev) => {
+                if (prev.some((m) => m.eventId === decision.eventId)) {
+                  return prev.map((m) =>
+                    m.eventId === decision.eventId
+                      ? {
+                          ...m,
+                          decision: decisionFromPlan(decision),
+                          reasoningSummary: decision.reasoningSummary,
+                          steps: stepsFromDecision(decision),
+                          memoryIds: decision.selectedMemoryIds,
+                        }
+                      : m,
+                  );
+                }
+                const eventInfo = eventsRef.current.get(decision.eventId);
+                return [
+                  ...prev,
+                  {
+                    id: `pending-${decision.eventId}`,
+                    eventId: decision.eventId,
+                    title: decision.title,
+                    when: eventInfo ? formatWhen(eventInfo.startsAt) : "",
+                    startsAt: eventInfo?.startsAt,
+                    decision: decisionFromPlan(decision),
+                    reasoningSummary: decision.reasoningSummary,
+                    steps: stepsFromDecision(decision),
+                    memoryIds: decision.selectedMemoryIds,
+                    audioSrc: AUDIO_BY_EVENT[decision.eventId],
+                  },
+                ];
+              });
             } else if (event === "plans") {
               rebuildMomentsFromPlans(data as OutreachPlan[]);
             } else if (event === "error") {
@@ -422,6 +459,7 @@ export function useMomentActions({
     trace,
     memories,
     calls,
+    loading,
     playingMomentId,
     onPlaybackChange,
     generating,

@@ -21,3 +21,16 @@ export function sendSse(res: Response, event: string, data: unknown): void {
 export function endSse(res: Response): void {
   if (!res.writableEnded && !res.destroyed) res.end();
 }
+
+/**
+ * Keeps the connection alive while long LLM calls run between events —
+ * proxies (e.g. the Next.js rewrite in front of the UI) kill idle streams.
+ * Returns a stop function; call it in the route's finally block.
+ */
+export function startSseHeartbeat(res: Response, intervalMs = 10_000): () => void {
+  const timer = setInterval(
+    () => sendSse(res, "ping", { at: new Date().toISOString() }),
+    intervalMs,
+  );
+  return () => clearInterval(timer);
+}

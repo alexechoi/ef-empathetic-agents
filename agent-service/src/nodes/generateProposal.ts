@@ -50,6 +50,9 @@ async function llmMessage(
       model: DEFAULT_MODEL,
       temperature: 0.5,
       configuration: { baseURL: OPENAI_BASE_URL },
+      // Gateway can stall under event load — fail fast to heuristic fallbacks.
+      timeout: 20_000,
+      maxRetries: 1,
     }).withStructuredOutput(MessageSchema, { name: "message" });
     return await model.invoke([
       {

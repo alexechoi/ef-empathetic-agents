@@ -31,6 +31,7 @@ export function MomentsScreen({
     trace: liveTrace,
     memories,
     calls,
+    loading,
     playingMomentId,
     onPlaybackChange,
     generating,
@@ -77,6 +78,8 @@ export function MomentsScreen({
           <MomentFeed
             moments={moments}
             trace={liveTrace}
+            loading={loading}
+            generating={generating}
             onApprove={approve}
             onDecline={decline}
             onPlaybackChange={onPlaybackChange}

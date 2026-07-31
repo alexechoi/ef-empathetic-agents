@@ -53,6 +53,9 @@ async function llmScore(
       model: DEFAULT_MODEL,
       temperature: 0.2,
       configuration: { baseURL: OPENAI_BASE_URL },
+      // Gateway can stall under event load — fail fast to heuristic fallbacks.
+      timeout: 20_000,
+      maxRetries: 1,
     }).withStructuredOutput(LlmScoreSchema, { name: "importance" });
     return await model.invoke([
       {

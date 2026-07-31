@@ -8,7 +8,7 @@ import { asyncHandler, parseOrThrow } from "../lib/http.js";
 import { plannerGraph } from "../graph.js";
 import { listPlans } from "../db/repositories/plans.js";
 import { logger } from "../lib/logger.js";
-import { endSse, sendSse, startSse } from "../lib/sse.js";
+import { endSse, sendSse, startSse, startSseHeartbeat } from "../lib/sse.js";
 import {
   buildEventDecisions,
   loadPlannerInput,
@@ -63,6 +63,7 @@ plansRouter.post("/generate/stream", async (req, res) => {
   }
 
   startSse(res);
+  const stopHeartbeat = startSseHeartbeat(res);
   const abort = new AbortController();
   res.on("close", () => abort.abort());
   sendSse(res, "started", { userId, at: new Date().toISOString() });
@@ -103,6 +104,7 @@ plansRouter.post("/generate/stream", async (req, res) => {
       sendSse(res, "error", { message: "Planner stream failed" });
     }
   } finally {
+    stopHeartbeat();
     endSse(res);
   }
 });

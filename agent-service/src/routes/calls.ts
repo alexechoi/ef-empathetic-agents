@@ -7,7 +7,7 @@ import {
   updateCall,
 } from "../db/repositories/calls.js";
 import { logger } from "../lib/logger.js";
-import { endSse, sendSse, startSse } from "../lib/sse.js";
+import { endSse, sendSse, startSse, startSseHeartbeat } from "../lib/sse.js";
 import {
   CallExecutionError,
   executeCall,
@@ -100,6 +100,7 @@ callsRouter.post("/trigger/stream", async (req, res) => {
   }
 
   startSse(res);
+  const stopHeartbeat = startSseHeartbeat(res);
   const observer: CallObserver = {
     trace: (step) => sendSse(res, "trace", step),
     context: (context) => sendSse(res, "call_context", context),
@@ -128,6 +129,7 @@ callsRouter.post("/trigger/stream", async (req, res) => {
     log.error({ err: error, planId: request.planId }, "Caller stream failed");
     sendSse(res, "error", { message });
   } finally {
+    stopHeartbeat();
     endSse(res);
   }
 });
